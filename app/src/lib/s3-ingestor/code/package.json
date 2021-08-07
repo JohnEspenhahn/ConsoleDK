@@ -1,0 +1,8 @@
+{
+    "name": "s3-ingestor",
+    "version": "0.1.0",
+    "dependencies": {
+        "csv-parser": "^3.0.0",
+        "fast-csv": "^4.3.6"
+    }
+}

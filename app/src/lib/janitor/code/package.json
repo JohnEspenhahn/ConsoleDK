@@ -1,0 +1,8 @@
+{
+    "name": "janitor-lambda",
+    "version": "0.1.0",
+    "dependencies": {
+        "co": "^4.6.0",
+        "lodash": "^4.17.21"
+    }
+}
