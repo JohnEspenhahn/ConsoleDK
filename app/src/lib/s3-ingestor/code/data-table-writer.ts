@@ -16,6 +16,7 @@ export class DataTableWriter {
     constructor(ddbTable: string, ddbPartitionTable: string, keyMapping: Mapping, failureHandler: (items: any[]) => Promise<void>) {
         this.ddb = AWSXRay.captureAWSClient(new AWS.DynamoDB());
         this.ddbTable = ddbTable;
+        this.ddbPartitionTable = ddbPartitionTable;
         this.keyMapping = keyMapping;
 
         this.columnTypeLookup = createTypeToVariableLookup(keyMapping.columnVariables);
@@ -76,6 +77,8 @@ export class DataTableWriter {
                 [this.ddbPartitionTable]: partitionRequests,
             },
         };
+
+        console.log(JSON.stringify(request));
 
         let resp;
         try {

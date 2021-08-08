@@ -68,9 +68,19 @@ export function parse(key: string, mappings: S3IngestionMapping[]): Mapping | nu
                 return acc;
             }, {} as { [columnName: string]: string });
 
+            const customerId = match.groups.customerId;
+            if (customerId.indexOf("_") >= 0) {
+                throw new Error("Invalid customerId, contains underscore");
+            }
+
+            const dataTableName = match.groups[type2Var.TABLE];
+            if (dataTableName.indexOf("_") >= 0) {
+                throw new Error("Invalid dataTableName, contains underscore");
+            }
+
             return {
-                customerId: match.groups.customerId,
-                dataTableName: match.groups[type2Var.TABLE],
+                customerId,
+                dataTableName,
                 partitionKeyPrefix: match.groups[type2Var.PARTITION_KEY] + (match.groups[type2Var.SECONDARY_PARTITION_KEY] ?? ""),
                 sortKey: match.groups[type2Var.SORT_KEY],
                 columns,
@@ -122,6 +132,14 @@ function validatePrefixVariables(prefix: string, prefixVariables: S3PrefixVariab
         throw new Error(`Prefix ${prefix} cannot start with '/'`);
     } else if (!prefix.endsWith('/')) {
         throw new Error(`Prefix ${prefix} must end with '/'`);
+    }
+
+    for (const prefixVar of prefixVariables) {
+        if (prefixVar.in) {
+            if (prefixVar.in.filter(val => val.indexOf("_") >= 0).length > 0) {
+                throw new Error(`PrefixVariable in cannot contain '_' ${prefixVar.in}`);
+            }
+        }
     }
 
     const parts = prefix.split('/');

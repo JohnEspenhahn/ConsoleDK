@@ -32,7 +32,7 @@ class RowSizeExceededError extends Error {
 }
 
 class CsvParser extends Transform {
-  constructor (opts = {}) {
+  constructor (opts = {}, callback) {
     super({ objectMode: true, highWaterMark: 16 })
 
     if (Array.isArray(opts)) opts = { headers: opts }
@@ -75,6 +75,7 @@ class CsvParser extends Transform {
 
     this.options = options
     this.headers = options.headers
+    this.callback = callback
   }
 
   parseCell (buffer, start, end) {
@@ -102,7 +103,7 @@ class CsvParser extends Transform {
     return this.parseValue(buffer, start, y)
   }
 
-  parseLine (buffer, start, end) {
+  parseLine = async (buffer, start, end) => {
     const { customNewline, escape, mapHeaders, mapValues, quote, separator, skipComments } = this.options
 
     end-- // trim newline
@@ -176,8 +177,9 @@ class CsvParser extends Transform {
       if (this.options.strict && cells.length !== this.headers.length) {
         const e = new RangeError('Row length does not match headers')
         this.emit('error', e)
+        await this.callback(undefined, e);
       } else {
-        this.writeRow(cells)
+        await this.writeRow(cells)
       }
     }
 
@@ -200,7 +202,7 @@ class CsvParser extends Transform {
     return buffer.toString('utf-8', start, end)
   }
 
-  writeRow (cells) {
+  writeRow = async (cells) => {
     const headers = (this.headers === false) ? cells.map((value, index) => index) : this.headers
 
     const row = cells.reduce((o, cell, index) => {
@@ -215,15 +217,16 @@ class CsvParser extends Transform {
     }, {})
 
     this.push(row)
+    await this.callback({ row: row, lineNumber: this.state.lineNumber });
   }
 
-  _flush (cb) {
+  _flush = async (cb) => {
     if (this.state.escaped || this.state.maximumSizeExceeded || !this._prev) return cb()
-    this.parseLine(this._prev, this.state.previousEnd, this._prev.length + 1) // plus since online -1s
+    await this.parseLine(this._prev, this.state.previousEnd, this._prev.length + 1) // plus since online -1s
     cb()
   }
 
-  _transform (data, enc, cb) {
+  _transform = async (data, enc, cb) => {
     if (typeof data === 'string') {
       data = Buffer.from(data)
     }
@@ -276,13 +279,14 @@ class CsvParser extends Transform {
         if (chr === this.options.newline) {
           if (!this.state.maximumSizeExceeded) {
             if (!this.state.skipping || (this.state.first && !this.headers)) {
-              this.parseLine(buffer, this.state.previousEnd, i + 1)
+              await this.parseLine(buffer, this.state.previousEnd, i + 1)
             } else {
               this.incrementLineNumber()
             }
           } else {
             const e = new RowSizeExceededError('Row exceeds the maximum size', this.state.previousEnd, i + 1)
             this.emit('error', e)
+            await this.callback(undefined, e)
           }
           this.state.previousEnd = i + 1
           this.state.rowLength = 0
@@ -317,6 +321,10 @@ class CsvParser extends Transform {
     this._prev = buffer
     cb()
   }
+
+  _destroy(err, cb) {
+    cb()
+  }
 }
 
-module.exports = (opts) => new CsvParser(opts)
+module.exports = (opts, callback) => new CsvParser(opts, callback)

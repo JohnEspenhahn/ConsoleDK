@@ -68,7 +68,8 @@ export async function main(event: any, context: any, callback: any) {
             next = await ingestObject(s3, bucket, key, event['Next'], mapping);
 
             if (!next) {
-                deleteObject(s3, bucket, key);
+                console.log("Deleting...");
+                await deleteObject(s3, bucket, key);
             }
         } else {
             console.log(`No mapping found for key ${key}`);
@@ -78,11 +79,15 @@ export async function main(event: any, context: any, callback: any) {
     }
 
     if (next) {
+        console.log("Returning next: " + next);
+
         callback(null, {
             ...event,
             Next: next,
         });
     } else {
+        console.log("Returning 200");
+
         callback(null, {
             StatusCode: 200,
             Nest: null,
@@ -92,6 +97,8 @@ export async function main(event: any, context: any, callback: any) {
 
 function ingestionFailureHandlerFactory(s3: AWS.S3, sourceBucket: string, sourceKey: string) {
     return async function _ingestionFailureHandler(items: any[]) {
+        console.log("Failed " + JSON.stringify(items));
+
         await s3.putObject({
             Bucket: sourceBucket,
             Key: `failed/${sourceKey}/${uuidv4()}`,
@@ -110,15 +117,21 @@ async function ingestObject(s3: AWS.S3, bucket: string, key: string, next: numbe
     const ddbPartitionTable = "" + process.env[Parameters.DDB_PARTITION_TABLE];
     const writer = new DataTableWriter(ddbTable, ddbPartitionTable, mapping, ingestionFailureHandler);
 
-    return await stream.stream(bucket, key, startIndex, async (successBatch, failedBatch) => {
-        if (successBatch) {
-            await writer.batchPut(successBatch);
-        }
+    try {
+        const resp = await stream.stream(bucket, key, startIndex, async (successBatch, failedBatch) => {
+            if (successBatch) {
+                await writer.batchPut(successBatch);
+            }
 
-        if (failedBatch) {
-            await ingestionFailureHandler(failedBatch);
-        }
-    });
+            if (failedBatch) {
+                await ingestionFailureHandler(failedBatch);
+            }
+        });
+
+        return resp;
+    } catch (e) {
+        throw e;
+    }
 }
 
 async function deleteObject(s3: AWS.S3, bucket: string, key: string) {

@@ -1,4 +1,6 @@
 import * as cdk from 'monocdk';
+import * as path from 'path';
+import { ConsoleAssets } from '../lib/console-assets/console-assets';
 import { Janitor } from '../lib/janitor/janitor';
 import { MultiTenantDataTable } from '../lib/multi-tenant-data-table/multi-tenant-data-table';
 import { S3Ingestor } from '../lib/s3-ingestor/s3-ingestor';
@@ -18,6 +20,7 @@ export class AppStack extends cdk.Stack {
             {
               name: "Table",
               type: "TABLE",
+              in: ["test-table"]
             },
             {
               name: "Partition",
@@ -30,6 +33,10 @@ export class AppStack extends cdk.Stack {
       target: {
         table: dataTable,
       },
+    });
+
+    new ConsoleAssets(this, 'console', {
+      entry: path.resolve(__dirname, "../console.tsx"),
     });
   }
 }

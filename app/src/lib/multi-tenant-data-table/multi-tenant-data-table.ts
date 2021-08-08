@@ -1,5 +1,8 @@
 import * as cdk from 'monocdk';
-import { aws_dynamodb as ddb } from 'monocdk';
+import { 
+    aws_dynamodb as ddb ,
+    aws_s3 as s3,
+} from 'monocdk';
 
 /**
  * Table with keys 
@@ -9,6 +12,7 @@ import { aws_dynamodb as ddb } from 'monocdk';
 export class MultiTenantDataTable extends cdk.Construct {
     private readonly table: ddb.Table;
     private readonly partitions: ddb.Table;
+    private readonly queryResults: s3.Bucket;
 
     constructor(scope: cdk.Construct, id: string) {
         super(scope, id);
@@ -31,6 +35,11 @@ export class MultiTenantDataTable extends cdk.Construct {
                 name: 'Partition', type: ddb.AttributeType.STRING,
             },
             billingMode: ddb.BillingMode.PAY_PER_REQUEST,
+        });
+
+        this.queryResults = new s3.Bucket(this, 'QueryResults');
+        this.queryResults.addLifecycleRule({
+            expiration: cdk.Duration.days(1),
         });
     }
 

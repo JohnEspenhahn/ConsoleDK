@@ -37,19 +37,26 @@ export class LongRunningLambda extends cdk.Construct {
         });
 
         invokeProcessor
-            .next(new stepfunctions.Choice(this, 'loop').when(
-                stepfunctions.Condition.isNotNull("$.Next"),
-                invokeProcessor,
-            ));
+            .next(
+                new stepfunctions.Choice(this, 'loop').when(
+                    stepfunctions.Condition.and(
+                        stepfunctions.Condition.isPresent("$.Next"),
+                        stepfunctions.Condition.isNotNull("$.Next"),
+                    ),
+                    invokeProcessor,
+                ).otherwise(new stepfunctions.Succeed(this, 'succeed'))
+            );
 
         invokeProcessor
             .addRetry({
                 errors: ["TooManyRequestsException"],
             })
-            .addCatch(new tasks.SqsSendMessage(scope, 'todql', {
-                queue: props.dlq,
-                messageBody: TaskInput.fromJsonPathAt("$"),
-            }));
+            .addCatch(
+                new tasks.SqsSendMessage(scope, 'todql', {
+                    queue: props.dlq,
+                    messageBody: TaskInput.fromJsonPathAt("$"),
+                }).next(new stepfunctions.Fail(this, 'fail'))
+            );
         
         this.logGroup = new logs.LogGroup(this, 'logs', {
             retention: logs.RetentionDays.ONE_MONTH,

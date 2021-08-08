@@ -90,6 +90,14 @@ export class S3Ingestor extends cdk.Construct {
                 }),
                 new iam.PolicyStatement({
                     actions: [
+                        "s3:PutObject"
+                    ],
+                    resources: [
+                        `${this.bucket.bucketArn}/failed/*`,
+                    ],
+                }),
+                new iam.PolicyStatement({
+                    actions: [
                         "dynamodb:BatchWriteItem",
                     ],
                     resources: props.target.table.arns,
