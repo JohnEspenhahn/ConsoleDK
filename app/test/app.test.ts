@@ -21,6 +21,30 @@ test('Mapping parser', () => {
       }
     ]);
 
+    if (!match) {
+      throw new Error("No match");
+    }
+});
+
+test('Mapping parser in', () => {
+    const match = parse('944551238448/test-table/test-customer/testdata.csv', [
+        {
+          "prefix": "{Table}/{Partition}/",
+          "prefixVariables": [
+              {
+                  "name": "Table",
+                  "type": "TABLE",
+                  "in": ["test-table2", "test-table"]
+              },
+              {
+                  "name": "Partition",
+                  "type": "PARTITION_KEY"
+              }
+          ],
+          "columnVariables": []
+      }
+    ]);
+
     console.log(match);
 
     if (!match) {

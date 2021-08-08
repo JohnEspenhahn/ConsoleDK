@@ -1,11 +1,11 @@
 import * as AWS from 'aws-sdk';
 import * as AWSXRay from 'aws-xray-sdk';
-import { Parameters, S3IngestionMapping } from "./arguments";
-import { parse, Mapping } from './mapping-parser';
 import csv = require('./csv-parser');
-import { DataTableWriter } from './data-table-writer';
 
-type IndexRange = [number, number];
+export interface FailedRow {
+    start: number;
+    end: number;
+}
 
 type RowSizeExceededError = Error & {
     start: number;
@@ -24,33 +24,35 @@ export class S3StreamReader {
         this.s3 = AWSXRay.captureAWSClient(new AWS.S3());
     }
 
-    stream = async (bucket: string, key: string, startIndex: number, callback: (successBatch?: any[], failedBatch?: IndexRange[]) => Promise<void>): Promise<number | null> => {
+    stream = async (bucket: string, key: string, startIndex: number, callback: (successBatch?: any[], failedBatch?: FailedRow[]) => Promise<void>): Promise<number | null> => {
         const start = Date.now();
         const metadata = await this.s3.headObject({ Bucket: bucket, Key: key }).promise();
+
+        // TODO handle JSON
         if (metadata.ContentType !== "text/csv" && metadata.ContentType !== "text/csv; charset=utf-8") {
             throw new Error(`Unsupported ContentType ${metadata.ContentType}`);
         }
 
-        let stream = this.s3.getObject({ Bucket: bucket, Key: key }).createReadStream();
-
-        let successBatch: any[] = [];
-        let failedBatch: IndexRange[] = [];
-        let index = startIndex;
-
-        // TODO handle JSON
-        stream = stream
-            .pipe(csv({
-                escape : '\\',
-                maxRowBytes : this.maximumRecordSizeBytes,
-                startAfter: startIndex,
-            }));
-
         return new Promise((resolve, reject) => {
+            let successBatch: any[] = [];
+            let failedBatch: FailedRow[] = [];
+            let index = startIndex;
+
+            let stream = this.s3.getObject({ Bucket: bucket, Key: key }).createReadStream();
+
+            stream = stream
+                .pipe(csv({
+                    escape : '\\',
+                    maxRowBytes : this.maximumRecordSizeBytes,
+                    startAfter: startIndex,
+                }));
+
             stream
                 .on('data', async (row) => {
                     successBatch.push(row);
 
-                    if (successBatch.length > this.batchSize) {
+                    if (successBatch.length >= this.batchSize) {
+                        console.log("Calling with: " + JSON.stringify(successBatch));
                         await callback(successBatch, undefined);
                         successBatch = [];
                     }
@@ -66,9 +68,13 @@ export class S3StreamReader {
                 .on('error', async (err) => {
                     if (err.hasOwnProperty("start") && err.hasOwnProperty("end")) {
                         // Is RowSizeExceededError
-                        failedBatch.push([(err as RowSizeExceededError).start, (err as RowSizeExceededError).end]);
+                        failedBatch.push({
+                            start: (err as RowSizeExceededError).start,
+                            end: (err as RowSizeExceededError).end
+                        });
 
-                        if (failedBatch.length > this.batchSize) {
+                        if (failedBatch.length >= this.batchSize) {
+                            console.log("Calling with: " + JSON.stringify(failedBatch));
                             await callback(undefined, failedBatch);
                             failedBatch = [];
                         }
@@ -80,11 +86,15 @@ export class S3StreamReader {
                 })
                 .on('end', async () => {
                     if (successBatch.length > 0) {
+                        console.log("Calling with: " + JSON.stringify(successBatch));
                         await callback(successBatch, undefined);
+                        successBatch = [];
                     }
 
                     if (failedBatch.length > 0) {
+                        console.log("Calling with: " + JSON.stringify(failedBatch));
                         await callback(undefined, failedBatch);
+                        failedBatch = [];
                     }
 
                     resolve(null);

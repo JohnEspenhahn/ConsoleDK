@@ -2,9 +2,10 @@ import * as AWS from 'aws-sdk';
 import * as AWSXRay from 'aws-xray-sdk';
 import { Parameters, S3IngestionMapping } from "./arguments";
 import { parse, Mapping } from './mapping-parser';
-import csv = require('csv-parser');
 import { DataTableWriter } from './data-table-writer';
 import { S3StreamReader } from './s3-stream-reader';
+import { v4 as uuidv4 } from 'uuid';
+
 
 interface SQSMessage {
     body: string;
@@ -89,13 +90,25 @@ export async function main(event: any, context: any, callback: any) {
     }
 }
 
+function ingestionFailureHandlerFactory(s3: AWS.S3, sourceBucket: string, sourceKey: string) {
+    return async function _ingestionFailureHandler(items: any[]) {
+        await s3.putObject({
+            Bucket: sourceBucket,
+            Key: `failed/${sourceKey}/${uuidv4()}`,
+            Body: JSON.stringify(items),
+        }).promise();
+    }
+}
+
 async function ingestObject(s3: AWS.S3, bucket: string, key: string, next: number | undefined, mapping: Mapping): Promise<number | null> {
     const startIndex: number = next || 0;
     
     const stream = new S3StreamReader();
+    const ingestionFailureHandler = ingestionFailureHandlerFactory(s3, bucket, key);
 
     const ddbTable =  "" + process.env[Parameters.DDB_TABLE];
-    const writer = new DataTableWriter(ddbTable, mapping);
+    const ddbPartitionTable = "" + process.env[Parameters.DDB_PARTITION_TABLE];
+    const writer = new DataTableWriter(ddbTable, ddbPartitionTable, mapping, ingestionFailureHandler);
 
     return await stream.stream(bucket, key, startIndex, async (successBatch, failedBatch) => {
         if (successBatch) {
@@ -103,7 +116,7 @@ async function ingestObject(s3: AWS.S3, bucket: string, key: string, next: numbe
         }
 
         if (failedBatch) {
-            // TODO write to S3 Dead Letter Queue
+            await ingestionFailureHandler(failedBatch);
         }
     });
 }

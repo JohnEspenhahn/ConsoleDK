@@ -18,7 +18,7 @@ export function validate(mappings: S3IngestionMapping[]) {
     const prefixRegexes = new Set();
     for (const mapping of mappings) {
         validateMapping(mapping.prefix, mapping.prefixVariables, mapping.columnVariables);
-        const prefixRegex = mappingPrefixToRegex(mapping.prefix);
+        const prefixRegex = mappingPrefixToRegex(mapping.prefix, mapping.prefixVariables);
         if (prefixRegexes.has(prefixRegex)) {
             throw new Error(`Equivalent duplicate paths convert to ${prefixRegex}. Occured with ${mapping.prefix}`);
         } else {
@@ -38,13 +38,22 @@ export function validateMapping(prefix: string, prefixVariables: S3PrefixVariabl
     assertHasZeroVariablesOfType(columnVariables, "PARTITION_KEY");
 }
 
-function mappingPrefixToRegex(prefix: string) {
-    return "^(?<customerId>[^/]+)/" + prefix.replace(/{(.+?)}/g, "(?<$1>[^/]+)") + "[^/]+$";
+function mappingPrefixToRegex(prefix: string, prefixVariables: S3PrefixVariable[]) {
+    for (const prefixVar of prefixVariables) {
+        if (prefixVar.in) {
+            const condition = `(?<${prefixVar.name}>` + prefixVar.in.join("|") + ")"
+            prefix = prefix.replace('{' + prefixVar.name + '}', condition);
+        } else {
+            prefix = prefix.replace('{' + prefixVar.name + '}', `(?<${prefixVar.name}>[^/]+)`)
+        }
+    }
+
+    return "^(?<customerId>[^/]+)/" + prefix + "[^/]+$";
 }
 
 export function parse(key: string, mappings: S3IngestionMapping[]): Mapping | null {
     for (const mapping of mappings) {
-        const regexString = mappingPrefixToRegex(mapping.prefix);
+        const regexString = mappingPrefixToRegex(mapping.prefix, mapping.prefixVariables);
 
         const regex = new RegExp(regexString);
         const match = regex.exec(key);

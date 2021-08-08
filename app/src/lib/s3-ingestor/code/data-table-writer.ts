@@ -1,49 +1,92 @@
 import * as AWS from 'aws-sdk';
 import * as AWSXRay from 'aws-xray-sdk';
 import { createTypeToVariableLookup, getColumnMappingForRow, Mapping, TypeToVariableLookup } from './mapping-parser';
+import { v4 as uuidv4 } from 'uuid';
 
 export class DataTableWriter {
     private readonly ddb: AWS.DynamoDB;
     private readonly ddbTable: string;
+    private readonly ddbPartitionTable: string;
 
     private readonly keyMapping: Mapping;
     private readonly columnTypeLookup: TypeToVariableLookup;
 
-    constructor(ddbTable: string, keyMapping: Mapping) {
+    private readonly failureHandler: (items: any[]) => Promise<void>;
+
+    constructor(ddbTable: string, ddbPartitionTable: string, keyMapping: Mapping, failureHandler: (items: any[]) => Promise<void>) {
         this.ddb = AWSXRay.captureAWSClient(new AWS.DynamoDB());
         this.ddbTable = ddbTable;
         this.keyMapping = keyMapping;
 
         this.columnTypeLookup = createTypeToVariableLookup(keyMapping.columnVariables);
+
+        this.failureHandler = failureHandler;
     }
 
     batchPut = async (batch: any[]) => {
-        const requests = batch.map(row => {
+        const MAX_BATCH_SIZE = 10;
+        if (batch.length > MAX_BATCH_SIZE) {
+            throw new Error(`Batch too large. ${batch.length} > ${MAX_BATCH_SIZE}`)
+        }
+
+        const tableRequests = [];
+        const partitions: { [customerIdDataTable: string]: Set<string> } = {};
+
+        for (const row of batch) {
             const columnMapping = getColumnMappingForRow(row, this.columnTypeLookup);
 
-            return {
+            const customerIdDataTable = `${this.keyMapping.customerId}_${this.keyMapping.dataTableName}`;
+            const partition = this.keyMapping.partitionKeyPrefix +  (columnMapping.partitionKeySuffix || "");
+
+            tableRequests.push({
                 PutRequest: { 
                     Item: AWS.DynamoDB.Converter.marshall({
                         ...row,
                         ...this.keyMapping.columns,
-                        PartitionKey: `${this.keyMapping.customerId}_${this.keyMapping.dataTableName}_${this.keyMapping.partitionKeyPrefix}` + (columnMapping.partitionKeySuffix || ""),
-                        SoryKey: this.keyMapping.sortKey || columnMapping.sortKey,
-                    })
-                }
-            };
-        });
+                        PartitionKey: `${customerIdDataTable}_${partition}`,
+                        SortKey: this.keyMapping.sortKey || columnMapping.sortKey || uuidv4()   
+                    }),
+                },
+            });
+
+            if (!(customerIdDataTable in partitions)) {
+                partitions[customerIdDataTable] = new Set();
+            }
+
+            partitions[customerIdDataTable].add(partition);
+        }
+
+        const partitionRequests = [];
+        for (const customerIdDataTable in partitions) {
+            for (const partition of partitions[customerIdDataTable]) {
+                partitionRequests.push({
+                    PutRequest: { 
+                        Item: AWS.DynamoDB.Converter.marshall({
+                            CustomerIdDataTable: customerIdDataTable,
+                            Partition: partition,
+                        }),
+                    },
+                });
+            }
+        }
 
         const request = {
             RequestItems: {
-                [this.ddbTable]: requests,
+                [this.ddbTable]: tableRequests,
+                [this.ddbPartitionTable]: partitionRequests,
             },
         };
 
-        console.log(request);
+        let resp;
+        try {
+            resp = await this.ddb.batchWriteItem(request).promise();
+        } catch (e) {
+            await this.sendToFailedQueue(request.RequestItems[this.ddbTable]);
 
-        const resp = await this.ddb.batchWriteItem(request).promise();
+            throw e;
+        }
     
-        if (resp.UnprocessedItems) {
+        if (resp.UnprocessedItems && resp.UnprocessedItems[this.ddbTable]) {
             await this.sendToFailedQueue(resp.UnprocessedItems[this.ddbTable].map(requestItem => {
                 if (requestItem.PutRequest) {
                     return AWS.DynamoDB.Converter.unmarshall(requestItem.PutRequest.Item);
@@ -55,11 +98,6 @@ export class DataTableWriter {
     }
 
     sendToFailedQueue = async (items: any[]) => {
-        for (const item of items) {
-            if (item) {
-                console.log(item);
-                // TODO write to S3 Dead Letter Queue
-            }
-        }
+        await this.failureHandler(items);
     }
 }

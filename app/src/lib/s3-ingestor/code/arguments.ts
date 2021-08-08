@@ -1,6 +1,7 @@
 export const Parameters = {
     MAPPINGS: "MAPPINGS",
     DDB_TABLE: "DDB_TABLE",
+    DDB_PARTITION_TABLE: "DDB_PARTITION_TABLE",
 };
 
 
@@ -10,6 +11,7 @@ export type VariableType = "TABLE" | "PARTITION_KEY" | "SECONDARY_PARTITION_KEY"
 export interface S3PrefixVariable {
     name: string;
     type: VariableType;
+    in?: string[];
 }
 
 export interface ColumnVariable {

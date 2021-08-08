@@ -72,6 +72,7 @@ export class S3Ingestor extends cdk.Construct {
             environment: {
                 [Parameters.MAPPINGS]: JSON.stringify(props.mappings),
                 [Parameters.DDB_TABLE]: props.target.table.tableName,
+                [Parameters.DDB_PARTITION_TABLE]: props.target.table.partitionTableName,
             },
             tracing: lambda.Tracing.PASS_THROUGH,
             logRetention: logs.RetentionDays.THREE_MONTHS,
@@ -91,10 +92,7 @@ export class S3Ingestor extends cdk.Construct {
                     actions: [
                         "dynamodb:BatchWriteItem",
                     ],
-                    resources: [
-                        props.target.table.tableArn,
-                        `${props.target.table.tableArn}/index/*`,
-                    ],
+                    resources: props.target.table.arns,
                 })
             ],
         }));
