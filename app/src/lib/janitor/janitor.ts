@@ -14,6 +14,7 @@ import {
     aws_events_targets as eventtargets,
 } from "monocdk";
 import * as path from "path";
+import { XRAY_TRACE } from "../global-config";
 
 export class Janitor extends cdk.Construct {
     private readonly lambda: lambda.Function;
@@ -28,6 +29,8 @@ export class Janitor extends cdk.Construct {
             entry: path.join(__dirname, '/code/janitor-entry.js'),
             projectRoot: path.join(__dirname, '/code/'),
             depsLockFilePath: path.join(__dirname, '/code/package-lock.json'),
+            tracing: XRAY_TRACE ? lambda.Tracing.ACTIVE : lambda.Tracing.DISABLED,
+            logRetention: logs.RetentionDays.ONE_WEEK,
         });
         this.lambda.role?.attachInlinePolicy(new iam.Policy(this, 'entrypolicy', {
             statements: [

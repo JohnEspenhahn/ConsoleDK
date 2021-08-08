@@ -1,7 +1,8 @@
-const _      = require('lodash');
-const co     = require('co');
-const AWS    = require('aws-sdk');
-const lambda = new AWS.Lambda({ apiVersion: '2015-03-31' });
+const _       = require('lodash');
+const co      = require('co');
+const AWS     = require('aws-sdk');
+const AWSXRay = require('aws-xray-sdk');
+const lambda  = AWSXRay.captureAWSClient(new AWS.Lambda({ apiVersion: '2015-03-31' }));
 
 // https://theburningmonk.com/2016/08/aws-lambda-janitor-lambda-function-to-clean-up-old-deployment-packages/
 

@@ -1,21 +1,24 @@
 export const Parameters = {
     MAPPINGS: "MAPPINGS",
+    DDB_TABLE: "DDB_TABLE",
 };
 
 
-type S3PrefixVariableType = "TABLE" | "PARTITION_KEY" | "SECONDARY_PARTITION_KEY" | "SORT_KEY" | "COLUMN";
+export type VariableType = "TABLE" | "PARTITION_KEY" | "SECONDARY_PARTITION_KEY" | "SORT_KEY" | "COLUMN";
 
-interface SerializableIngestionTarget {
-    tableName: string;
-}
 
 export interface S3PrefixVariable {
     name: string;
-    type: S3PrefixVariableType;
+    type: VariableType;
 }
 
-export interface SerializableS3IngestionMapping {
+export interface ColumnVariable {
+    name: string;
+    type: VariableType;
+}
+
+export interface S3IngestionMapping {
     prefix: string;
     prefixVariables: S3PrefixVariable[];
-    target: SerializableIngestionTarget;
+    columnVariables: ColumnVariable[];
 }

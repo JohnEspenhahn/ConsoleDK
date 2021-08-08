@@ -24,11 +24,12 @@ export class AppStack extends cdk.Stack {
               type: "PARTITION_KEY",
             },
           ],
-          target: {
-            table: dataTable,
-          },
+          columnVariables: [],
         },
       ],
+      target: {
+        table: dataTable,
+      },
     });
   }
 }

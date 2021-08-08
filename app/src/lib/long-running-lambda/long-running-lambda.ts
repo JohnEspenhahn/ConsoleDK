@@ -48,10 +48,12 @@ export class LongRunningLambda extends cdk.Construct {
             })
             .addCatch(new tasks.SqsSendMessage(scope, 'todql', {
                 queue: props.dlq,
-                messageBody: TaskInput.fromJsonPathAt("$.input.message"),
+                messageBody: TaskInput.fromJsonPathAt("$"),
             }));
         
-        this.logGroup = new logs.LogGroup(this, 'logs');
+        this.logGroup = new logs.LogGroup(this, 'logs', {
+            retention: logs.RetentionDays.ONE_MONTH,
+        });
         this.machine = new stepfunctions.StateMachine(this, 'machine', {
             definition: invokeProcessor,
             timeout: props.timeout,
@@ -72,6 +74,7 @@ export class LongRunningLambda extends cdk.Construct {
                 [Parameters.STEP_FUNCTION]: this.machine.stateMachineArn,
             },
             tracing: XRAY_TRACE ? lambda.Tracing.ACTIVE : lambda.Tracing.PASS_THROUGH,
+            logRetention: logs.RetentionDays.ONE_MONTH,
         });
         this.entryPoint.role?.attachInlinePolicy(new iam.Policy(this, 'entrypolicy', {
             statements: [

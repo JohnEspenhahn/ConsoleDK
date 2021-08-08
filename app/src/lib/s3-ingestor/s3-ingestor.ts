@@ -8,10 +8,12 @@ import {
     aws_lambda as lambda,
     aws_lambda_event_sources as eventsources,
     aws_iam as iam,
+    aws_logs as logs,
 } from "monocdk";
 import { LongRunningLambda } from '../long-running-lambda/long-running-lambda';
 import * as path from "path";
-import { Parameters, S3PrefixVariable, SerializableS3IngestionMapping } from './code/arguments';
+import { ColumnVariable, Parameters, S3PrefixVariable } from './code/arguments';
+import { validate } from './code/mapping-parser';
 
 interface IngestionTarget {
     table: MultiTenantDataTable;
@@ -20,12 +22,13 @@ interface IngestionTarget {
 interface S3IngestionMapping {
     prefix: string;
     prefixVariables: S3PrefixVariable[];
-    target: IngestionTarget;
+    columnVariables: ColumnVariable[];
 }
 
 export interface S3IngestorProps {
     mappings: S3IngestionMapping[];
     ingestionTimeout: cdk.Duration;
+    target: IngestionTarget;
 }
 
 /**
@@ -57,17 +60,21 @@ export class S3Ingestor extends cdk.Construct {
 
         this.bucket.addObjectCreatedNotification(new s3notify.SqsDestination(this.queue));
 
+        validate(props.mappings);
+
         const processor = new lambdajs.NodejsFunction(this, 'processor', {
-            memorySize: 128,
+            memorySize: 3000,
             timeout: cdk.Duration.minutes(15),
             handler: 'main',
             entry: path.join(__dirname, '/code/s3-ingestor-lambda-entry.ts'),
             projectRoot: path.join(__dirname, '/code/'),
             depsLockFilePath: path.join(__dirname, '/code/package-lock.json'),
             environment: {
-                [Parameters.MAPPINGS]: JSON.stringify(this.serializeMappings(props.mappings)),
+                [Parameters.MAPPINGS]: JSON.stringify(props.mappings),
+                [Parameters.DDB_TABLE]: props.target.table.tableName,
             },
             tracing: lambda.Tracing.PASS_THROUGH,
+            logRetention: logs.RetentionDays.THREE_MONTHS,
         });
         processor.role?.attachInlinePolicy(new iam.Policy(this, 'entrypolicy', {
             statements: [
@@ -80,6 +87,15 @@ export class S3Ingestor extends cdk.Construct {
                         `${this.bucket.bucketArn}/*`,
                     ],
                 }),
+                new iam.PolicyStatement({
+                    actions: [
+                        "dynamodb:BatchWriteItem",
+                    ],
+                    resources: [
+                        props.target.table.tableArn,
+                        `${props.target.table.tableArn}/index/*`,
+                    ],
+                })
             ],
         }));
 
@@ -96,16 +112,6 @@ export class S3Ingestor extends cdk.Construct {
 
         this.lambda.addEventSource(new eventsources.SqsEventSource(this.queue, {
             batchSize: 1,
-        }));
-    }
-
-    private serializeMappings = (mappings: S3IngestionMapping[]): SerializableS3IngestionMapping[] => {
-        return mappings.map(mapping => ({
-            prefix: mapping.prefix,
-            prefixVariables: mapping.prefixVariables,
-            target: {
-                tableName: mapping.target.table.tableName,
-            },
         }));
     }
 

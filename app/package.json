@@ -9,7 +9,8 @@
     "watch": "tsc -w",
     "test": "jest",
     "cdk": "cdk",
-    "deploy": "npm run build && cdk synth && cdk deploy"
+    "deploy": "npm run build && cdk synth && cdk deploy",
+    "recursive-install": "npm-recursive-install"
   },
   "devDependencies": {
     "@aws-cdk/assert": "1.117.0",
@@ -23,6 +24,10 @@
   },
   "dependencies": {
     "aws-sdk": "^2.963.0",
+    "aws-xray-sdk": "^3.3.3",
+    "co": "^4.6.0",
+    "csv-parser": "^3.0.0",
+    "lodash": "^4.17.21",
     "monocdk": "^1.117.0",
     "source-map-support": "^0.5.16"
   }

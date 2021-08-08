@@ -26,4 +26,8 @@ export class MultiTenantDataTable extends cdk.Construct {
         return this.table.tableName;
     }
 
+    get tableArn() {
+        return this.table.tableArn;
+    }
+
 }

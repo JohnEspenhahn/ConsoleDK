@@ -1,4 +1,5 @@
 import * as AWS from 'aws-sdk';
+import * as AWSXRay from 'aws-xray-sdk';
 import { Parameters } from "./arguments";
 
 export async function main(event: any, context: any, callback: any) {
@@ -6,7 +7,7 @@ export async function main(event: any, context: any, callback: any) {
         throw new Error("No step function found in env");
     }
 
-    const stepfunctions = new AWS.StepFunctions();
+    const stepfunctions = AWSXRay.captureAWSClient(new AWS.StepFunctions());
 
     try {
         const execution = await stepfunctions.startExecution({

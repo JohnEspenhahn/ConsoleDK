@@ -1,5 +1,7 @@
 {
     "name": "long-running-lambda",
     "version": "0.1.0",
-    "dependencies": {}
+    "dependencies": {
+        "aws-xray-sdk": "^3.3.3"
+    }
 }

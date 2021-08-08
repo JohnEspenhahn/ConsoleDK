@@ -3,6 +3,7 @@
     "version": "0.1.0",
     "dependencies": {
         "co": "^4.6.0",
-        "lodash": "^4.17.21"
+        "lodash": "^4.17.21",
+        "aws-xray-sdk": "^3.3.3"
     }
 }
