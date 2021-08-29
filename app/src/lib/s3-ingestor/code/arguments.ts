@@ -4,7 +4,7 @@ export const Parameters = {
 };
 
 
-export type VariableType = "TABLE" | "PARTITION_KEY" | "SECONDARY_PARTITION_KEY" | "SORT_KEY" | "COLUMN";
+export type VariableType = "PARTITION_KEY" | "SECONDARY_PARTITION_KEY" | "SORT_KEY" | "COLUMN";
 
 
 export interface S3PrefixVariable {

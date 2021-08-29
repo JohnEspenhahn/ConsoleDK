@@ -77,7 +77,7 @@ export const main: Handler<Event, Result<Event>> = metricScope(metrics => async 
 
         console.log(`s3://${bucket}/${key} after ${event['Next']}`);
 
-        const mapping = parse(key, mappings);
+        const mapping = parse(getDDBTable(), key, mappings);
         if (mapping) {
             // Configure metrics dimension
             metrics.setDimensions({ Service: "Ingestion", CustomerId: mapping.customerId });
@@ -127,8 +127,7 @@ async function ingestObject(metrics: MetricsLogger, s3: AWS.S3, bucket: string, 
     const stream = new S3StreamReader();
     const ingestionFailureHandler = ingestionFailureHandlerFactory(s3, bucket, key);
 
-    const ddbTable =  "" + process.env[Parameters.DDB_TABLE];
-    const writer = new DataTableWriter(ddbTable, mapping, ingestionFailureHandler);
+    const writer = new DataTableWriter(getDDBTable(), mapping, ingestionFailureHandler);
 
     try {
         const resp = await stream.stream(bucket, key, startIndex, async (successBatch, failedBatch) => {
@@ -165,4 +164,8 @@ async function deleteObject(s3: AWS.S3, bucket: string, key: string) {
         console.log(e);
         throw e;
     }
+}
+
+function getDDBTable() {
+    return  "" + process.env[Parameters.DDB_TABLE];
 }

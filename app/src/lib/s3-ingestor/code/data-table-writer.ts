@@ -33,12 +33,11 @@ export class DataTableWriter {
         }
 
         const tableRequests = [];
-        const partitions: { [customerIdDataTable: string]: Set<string> } = {};
+        const partitions: { [customerId: string]: Set<string> } = {};
 
         for (const row of batch) {
             const columnMapping = getColumnMappingForRow(row, this.columnTypeLookup);
 
-            const customerIdDataTable = `${this.keyMapping.customerId}_${this.keyMapping.dataTableName}`;
             const partition = this.keyMapping.partitionKeyPrefix +  (columnMapping.partitionKeySuffix || "");
 
             tableRequests.push({
@@ -46,17 +45,17 @@ export class DataTableWriter {
                     Item: AWS.DynamoDB.Converter.marshall({
                         ...row,
                         ...this.keyMapping.columns,
-                        PartitionKey: `${customerIdDataTable}_${partition}`,
+                        PartitionKey: `${this.keyMapping.customerId}_${partition}`,
                         SortKey: this.keyMapping.sortKey || columnMapping.sortKey || uuidv4() // TODO remove uuidv4()
                     }),
                 },
             });
 
-            if (!(customerIdDataTable in partitions)) {
-                partitions[customerIdDataTable] = new Set();
+            if (!(this.keyMapping.customerId in partitions)) {
+                partitions[this.keyMapping.customerId] = new Set();
             }
 
-            partitions[customerIdDataTable].add(partition);
+            partitions[this.keyMapping.customerId].add(partition);
         }
 
         const request = {

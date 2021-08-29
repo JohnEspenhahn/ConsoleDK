@@ -13,7 +13,7 @@ import {
 import { LongRunningLambda } from '../long-running-lambda/long-running-lambda';
 import * as path from "path";
 import { ColumnVariable, Parameters, S3PrefixVariable } from './code/arguments';
-import { getPathPrefixGlobsForTable, validate } from './code/mapping-parser';
+import { validate } from './code/mapping-parser';
 import { IAM_CUSTOMER_ID } from '../simpleauth/constants';
 
 interface IngestionTarget {
@@ -140,7 +140,7 @@ export class S3Ingestor extends cdk.Construct {
                             "s3:PutObject",
                         ],
                         resources: props.tables.map(tableName => 
-                            `${this.bucket.bucketArn}/\${${IAM_CUSTOMER_ID}}/${getPathPrefixGlobsForTable(tableName, this.props.mappings)}`
+                            `${this.bucket.bucketArn}/\${${IAM_CUSTOMER_ID}}/${tableName}/*`
                         ),
                     }),
                 ],

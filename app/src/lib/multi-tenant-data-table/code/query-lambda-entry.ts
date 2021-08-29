@@ -3,7 +3,6 @@ import * as AWSXRay from 'aws-xray-sdk';
 import { metricScope, MetricsLogger, Unit } from 'aws-embedded-metrics';
 import { Handler, Context } from 'aws-lambda';
 import { Parameters } from './arguments';
-import { getIamCustomerId } from '../../simpleauth/constants';
 
 interface Event {
     NextToken?: AWS.DynamoDB.PartiQLNextToken;
@@ -56,4 +55,9 @@ export const main: Handler<Event> = metricScope(metrics => async function(event:
 
 function emitQueryMetric(metrics: MetricsLogger, rows: number) {
     metrics.putMetric("Rows", rows, Unit.Count)
+}
+
+function getIamCustomerId(lambdaContext: Context) {
+    // TODO require cognito
+    return lambdaContext.identity?.cognitoIdentityPoolId || 'unauthorized';
 }

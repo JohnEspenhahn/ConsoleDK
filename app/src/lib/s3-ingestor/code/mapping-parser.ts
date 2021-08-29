@@ -2,7 +2,6 @@ import { S3IngestionMapping, S3PrefixVariable, ColumnVariable, VariableType } fr
 
 export interface Mapping {
     customerId: string;
-    dataTableName: string;
     partitionKeyPrefix?: string;
     sortKey?: string;
     columns: { [columnName: string]: string };
@@ -18,7 +17,7 @@ export function validate(mappings: S3IngestionMapping[]) {
     const prefixRegexes = new Set();
     for (const mapping of mappings) {
         validateMapping(mapping.prefix, mapping.prefixVariables, mapping.columnVariables);
-        const prefixRegex = mappingPrefixToRegex(mapping.prefix, mapping.prefixVariables);
+        const prefixRegex = mappingPrefixToRegex("", mapping.prefix, mapping.prefixVariables);
         if (prefixRegexes.has(prefixRegex)) {
             throw new Error(`Equivalent duplicate paths convert to ${prefixRegex}. Occured with ${mapping.prefix}`);
         } else {
@@ -27,50 +26,16 @@ export function validate(mappings: S3IngestionMapping[]) {
     }
 }
 
-export function getPathPrefixGlobsForTable(tableName: string, mappings: S3IngestionMapping[]) {
-    const matched: string[] = [];
-
-    for (const mapping of mappings) {
-        const tables = mapping.prefixVariables.filter(variable => variable.type == "TABLE");
-        if (tables.length == 0) {
-            continue;
-        }
-
-        const table = tables[0];
-        if (allowsFor(table, tableName)) {
-            const tableVariable =`{${table.name}}`;
-
-            // Find the first delimiter after the table variable in the path
-            let end = mapping.prefix.indexOf('/', mapping.prefix.indexOf(tableVariable) + tableVariable.length);
-            if (end == -1) {
-                end = mapping.prefix.length;
-            }
-
-            matched.push(
-                mapping.prefix.substr(0, end) + "/*"
-            );
-        }
-    }
-
-    return matched;
-}
-
-function allowsFor(variable: S3PrefixVariable, value: string) {
-    return !variable.in || variable.in.indexOf(value) >= 0;
-}
-
 export function validateMapping(prefix: string, prefixVariables: S3PrefixVariable[], columnVariables: ColumnVariable[]) {
     validatePrefixVariables(prefix, prefixVariables);
-    assertHasExactlyOneVariableOfType(prefixVariables, [], "TABLE");
     assertHasExactlyOneVariableOfType(prefixVariables, [], "PARTITION_KEY");
     assertHasZeroOrOneVariablesOfType(prefixVariables, columnVariables, "SECONDARY_PARTITION_KEY");
     assertHasZeroOrOneVariablesOfType(prefixVariables, columnVariables, "SORT_KEY");
     assertHasZeroVariablesOfType(columnVariables, "COLUMN");
-    assertHasZeroVariablesOfType(columnVariables, "TABLE");
     assertHasZeroVariablesOfType(columnVariables, "PARTITION_KEY");
 }
 
-function mappingPrefixToRegex(prefix: string, prefixVariables: S3PrefixVariable[]) {
+function mappingPrefixToRegex(ddbTable: string, prefix: string, prefixVariables: S3PrefixVariable[]) {
     for (const prefixVar of prefixVariables) {
         if (prefixVar.in) {
             const condition = `(?<${prefixVar.name}>` + prefixVar.in.join("|") + ")"
@@ -80,12 +45,12 @@ function mappingPrefixToRegex(prefix: string, prefixVariables: S3PrefixVariable[
         }
     }
 
-    return "^(?<customerId>[^/]+)/" + prefix + "[^/]+$";
+    return "^(?<customerId>[^/]+)/" + ddbTable + "/" + prefix + "[^/]+$";
 }
 
-export function parse(key: string, mappings: S3IngestionMapping[]): Mapping | null {
+export function parse(key: string, ddbTable: string, mappings: S3IngestionMapping[]): Mapping | null {
     for (const mapping of mappings) {
-        const regexString = mappingPrefixToRegex(mapping.prefix, mapping.prefixVariables);
+        const regexString = mappingPrefixToRegex(ddbTable, mapping.prefix, mapping.prefixVariables);
 
         const regex = new RegExp(regexString);
         const match = regex.exec(key);
@@ -105,14 +70,8 @@ export function parse(key: string, mappings: S3IngestionMapping[]): Mapping | nu
                 throw new Error("Invalid customerId, contains underscore");
             }
 
-            const dataTableName = match.groups[type2Var.TABLE];
-            if (dataTableName.indexOf("_") >= 0) {
-                throw new Error("Invalid dataTableName, contains underscore");
-            }
-
             return {
                 customerId,
-                dataTableName,
                 partitionKeyPrefix: match.groups[type2Var.PARTITION_KEY] + (match.groups[type2Var.SECONDARY_PARTITION_KEY] ?? ""),
                 sortKey: match.groups[type2Var.SORT_KEY],
                 columns,
@@ -125,7 +84,6 @@ export function parse(key: string, mappings: S3IngestionMapping[]): Mapping | nu
 }
 
 export type TypeToVariableLookup = {
-    TABLE: string;
     PARTITION_KEY: string;
     SECONDARY_PARTITION_KEY: string;
     SORT_KEY: string;
@@ -141,7 +99,6 @@ export function getColumnMappingForRow(row: any, typeToVariableLookup: TypeToVar
 
 export function createTypeToVariableLookup(variables: (S3PrefixVariable | ColumnVariable)[]): TypeToVariableLookup {
     const lookup: TypeToVariableLookup = {
-        TABLE: "",
         PARTITION_KEY: "",
         SECONDARY_PARTITION_KEY: "",
         SORT_KEY: "",
@@ -176,11 +133,6 @@ function validatePrefixVariables(prefix: string, prefixVariables: S3PrefixVariab
 
     const parts = prefix.split('/');
     const variables = parts.filter(part => part.match(/^{.+?}$/)).map(part => part.substring(1, part.length - 1));
-
-    const lookup = createTypeToVariableLookup(prefixVariables);
-    if (variables.length > 0 && variables[0] !== lookup.TABLE) {
-        throw new Error(`The first path variable must be of type TABLE`);
-    }
 
     const variablesSet = new Set(variables);
 
