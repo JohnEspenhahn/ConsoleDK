@@ -27,6 +27,38 @@ export function validate(mappings: S3IngestionMapping[]) {
     }
 }
 
+export function getPathPrefixGlobsForTable(tableName: string, mappings: S3IngestionMapping[]) {
+    const matched: string[] = [];
+
+    for (const mapping of mappings) {
+        const tables = mapping.prefixVariables.filter(variable => variable.type == "TABLE");
+        if (tables.length == 0) {
+            continue;
+        }
+
+        const table = tables[0];
+        if (allowsFor(table, tableName)) {
+            const tableVariable =`{${table.name}}`;
+
+            // Find the first delimiter after the table variable in the path
+            let end = mapping.prefix.indexOf('/', mapping.prefix.indexOf(tableVariable) + tableVariable.length);
+            if (end == -1) {
+                end = mapping.prefix.length;
+            }
+
+            matched.push(
+                mapping.prefix.substr(0, end) + "/*"
+            );
+        }
+    }
+
+    return matched;
+}
+
+function allowsFor(variable: S3PrefixVariable, value: string) {
+    return !variable.in || variable.in.indexOf(value) >= 0;
+}
+
 export function validateMapping(prefix: string, prefixVariables: S3PrefixVariable[], columnVariables: ColumnVariable[]) {
     validatePrefixVariables(prefix, prefixVariables);
     assertHasExactlyOneVariableOfType(prefixVariables, [], "TABLE");
@@ -144,6 +176,12 @@ function validatePrefixVariables(prefix: string, prefixVariables: S3PrefixVariab
 
     const parts = prefix.split('/');
     const variables = parts.filter(part => part.match(/^{.+?}$/)).map(part => part.substring(1, part.length - 1));
+
+    const lookup = createTypeToVariableLookup(prefixVariables);
+    if (variables.length > 0 && variables[0] !== lookup.TABLE) {
+        throw new Error(`The first path variable must be of type TABLE`);
+    }
+
     const variablesSet = new Set(variables);
 
     if (variables.length !== variablesSet.size) {

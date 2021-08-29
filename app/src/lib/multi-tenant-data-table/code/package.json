@@ -1,13 +1,10 @@
 {
-    "name": "s3-ingestor",
+    "name": "data-table-query-handler",
     "version": "0.1.0",
     "dependencies": {
         "aws-xray-sdk": "^3.3.3",
-        "uuid": "^8.3.2",
-        "lodash": "^4.17.21",
         "aws-embedded-metrics": "^2.0.4"
     },
     "devDependencies": {
-        "@types/lodash": "^4.14.172"
     }
 }

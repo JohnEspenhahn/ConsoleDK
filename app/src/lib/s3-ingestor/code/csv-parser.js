@@ -176,7 +176,7 @@ class CsvParser extends Transform {
     if (!this.state.skipping) {
       if (this.options.strict && cells.length !== this.headers.length) {
         const e = new RangeError('Row length does not match headers')
-        this.emit('error', e)
+        // this.emit('error', e)
         await this.callback(undefined, e);
       } else {
         await this.writeRow(cells)
@@ -285,7 +285,7 @@ class CsvParser extends Transform {
             }
           } else {
             const e = new RowSizeExceededError('Row exceeds the maximum size', this.state.previousEnd, i + 1)
-            this.emit('error', e)
+            // this.emit('error', e)
             await this.callback(undefined, e)
           }
           this.state.previousEnd = i + 1
@@ -322,7 +322,23 @@ class CsvParser extends Transform {
     cb()
   }
 
-  _destroy(err, cb) {
+  _destroy = async (err, cb) => {
+    console.log("Destroying...");
+
+    if (err) {
+      await this.callback(undefined, err, true);
+    } else {
+      await this.callback({}, undefined, true);
+    }
+
+    cb()
+  }
+
+  _final = async (cb) => {
+    console.log("Finally...");
+
+    await this.callback({}, undefined, true);
+
     cb()
   }
 }

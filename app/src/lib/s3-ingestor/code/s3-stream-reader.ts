@@ -13,71 +13,7 @@ type RowSizeExceededError = Error & {
     end: number;
 };
 
-class CallbackWriter extends Writable {
-
-    private readonly batchSize = 5;
-    private readonly maxDurationSeconds = 60 * 8;
-    private readonly start = Date.now();
-
-    private readonly source: Readable;
-    private readonly resolve: (value: number) => void;
-    private readonly callback: (successBatch?: any[], failedBatch?: FailedRow[]) => Promise<void>;
-
-    private index: number;
-    private successBatch: any[] = [];
-
-    constructor(
-        startIndex: number, 
-        callback: (successBatch?: any[], failedBatch?: FailedRow[]) => Promise<void>, 
-        source: Readable, 
-        resolve: (value: number) => void
-    ) {
-        super({
-            highWaterMark: 1,
-        });
-
-        this.index = startIndex;
-        this.callback = callback;
-        this.source = source;
-        this.resolve = resolve;
-    }
-
-    _write = async (item: any, encoding: string, callback: () => void) => {
-        this.source.pause();
-
-        try {
-            this.successBatch.push(item.row);
-            this.index = item.lineNumber;
-
-            if (this.successBatch.length >= this.batchSize) {
-                console.log("Calling with: " + JSON.stringify(this.successBatch));
-                await this.callback(this.successBatch, undefined);
-                this.successBatch.length = 0;
-            }
-
-            const elapsedTime = ((Date.now()) - this.start) / 1000;
-            if (elapsedTime > this.maxDurationSeconds) {
-                this.resolve(this.index);
-                this.source.destroy();
-            }
-        } finally {
-            this.source.resume();
-            callback();
-        }
-    }
-
-    _final = async (callback: () => void) => {
-        if (this.successBatch.length > 0) {
-            await this.callback(this.successBatch, undefined);
-        }
-
-        callback();
-    }
-
-    _destroy(err: any, cb: (err: Error | null) => void) {
-        cb(null)
-    }
-}
+export type StreamReaderCallback = (successBatch?: any[], failedBatch?: FailedRow[]) => Promise<void>;
 
 export class S3StreamReader {
 
@@ -89,7 +25,7 @@ export class S3StreamReader {
         this.s3 = AWSXRay.captureAWSClient(new AWS.S3());
     }
 
-    stream = async (bucket: string, key: string, startIndex: number, callback: (successBatch?: any[], failedBatch?: FailedRow[]) => Promise<void>): Promise<number | null> => {
+    stream = async (bucket: string, key: string, startIndex: number, callback: StreamReaderCallback): Promise<number | null> => {
         const metadata = await this.s3.headObject({ Bucket: bucket, Key: key }).promise();
 
         // TODO handle JSON
@@ -97,65 +33,114 @@ export class S3StreamReader {
             throw new Error(`Unsupported ContentType ${metadata.ContentType}`);
         }
 
-        return new Promise((resolve, reject) => {
+        // TODO enforce maximum size based on 15 minute scan timeout
+
+        const stream = this.s3.getObject({ Bucket: bucket, Key: key }).createReadStream();
+        
+        try {
+            const nextStartAfterIndex = await this.processStream(stream, startIndex, callback);
+            return nextStartAfterIndex;
+        } catch (e) {
+            console.log(e);
+            throw e;
+        }
+    }
+
+    private processStream(stream: Readable, startAfterIndex: number, callback: StreamReaderCallback): Promise<number | null> {
+        return new Promise((_resolve, _reject) => {
+            let stopFlag = false;
+
+            function doStop() {
+                stopFlag = true;
+                stream.destroy();
+            }
+
+            const resolve = async (val: number | null) => {
+                doStop();
+                _resolve(val);
+            };
+
+            const reject = async (err: Error) => {
+                doStop();
+                _reject(err);
+            };
+
             let successBatch: any[] = [];
             let failedBatch: FailedRow[] = [];
-            let index = startIndex;
+            let nextStartAfterIndex = -1; // Initial
 
-            const batchSize = 5;
+            const batchSize = 1; // TODO increase to 5?
             const start = Date.now();
             const maxDurationSeconds = 60 * 8;
 
-            const stream = this.s3.getObject({ Bucket: bucket, Key: key }).createReadStream();
             stream.pipe(csv({
                     escape : '\\',
                     maxRowBytes : this.maximumRecordSizeBytes,
-                    startAfter: startIndex,
-                }, async (data: any, err: Error) => {
-                    if (data) {
-                        successBatch.push(data.row);
-                        index = data.lineNumber;
+                    startAfter: startAfterIndex,
+                }, async (data: any, err: Error, stop?: boolean) => {
+                    // Check if already stopped
+                    if (stopFlag) {
+                        return;
+                    }
+                    
+                    // Stop if stream ended, or elapsedTime exceeded
+                    const elapsedTime = ((Date.now()) - start) / 1000;
+                    if (stop) { // || elapsedTime > maxDurationSeconds
+                        stop = true;
+                        stopFlag = true;
+                    }
 
-                        if (successBatch.length >= batchSize) {
+                    // Handle event
+                    if (data) {
+                        console.log("Data: " + JSON.stringify(data));
+
+                        // Data row may not be present when stopping
+                        if (data.row) {
+                            successBatch.push(data.row);
+                            nextStartAfterIndex = data.lineNumber;
+                        }
+
+                        if (stop || successBatch.length >= batchSize) {
                             await callback(successBatch, undefined);
                             successBatch = [];
+
+                            // TODO remove
+                            stop = true;
                         }
                     } else if (err.hasOwnProperty("start") && err.hasOwnProperty("end")) {
-                        // TODO this callback may get overwhelmed 
                         failedBatch.push({
                             start: (err as RowSizeExceededError).start,
                             end: (err as RowSizeExceededError).end
                         });
 
-                        if (failedBatch.length >= batchSize) {
-                            await callback(undefined, failedBatch);
-                            failedBatch = [];
+                        try {
+                            if (stop || failedBatch.length >= batchSize) {
+                                await callback(undefined, failedBatch);
+                                failedBatch = [];
+                            }
+                        } catch (innerErr) {
+                            console.error(innerErr);
+                            reject(innerErr);
+                            return;
                         }
                     } else {
+                        // Unexpected case
+                        console.error(err);
                         reject(err);
                         return;
                     }
 
-                    const elapsedTime = ((Date.now()) - start) / 1000;
-                    if (elapsedTime > maxDurationSeconds) {
-                        console.log("Duration exceeded");
-                        resolve(index);
-                        stream.destroy();
+                    // Happy-path stop
+                    if (stop) {
+                        if (nextStartAfterIndex > startAfterIndex) {
+                            // Potentially more data to process
+                            resolve(nextStartAfterIndex);
+                        } else {
+                            // Done
+                            resolve(null);
+                        }
                     }
-                }))
-                .on('end', async () => {
-                    if (successBatch.length > 0) {
-                        await callback(successBatch, undefined);
-                        successBatch = [];
-                    }
-
-                    if (failedBatch.length > 0) {
-                        await callback(undefined, failedBatch);
-                        failedBatch = [];
-                    }
-
-                    resolve(null);
-                });
+                }));
         });
     }
 

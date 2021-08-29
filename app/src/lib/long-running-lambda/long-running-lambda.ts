@@ -34,6 +34,7 @@ export class LongRunningLambda extends cdk.Construct {
         const invokeProcessor = new tasks.LambdaInvoke(this, 'invoke', {
             lambdaFunction: props.processor,
             invocationType: tasks.LambdaInvocationType.REQUEST_RESPONSE,
+            outputPath: "$.Payload.cdkResult"
         });
 
         invokeProcessor

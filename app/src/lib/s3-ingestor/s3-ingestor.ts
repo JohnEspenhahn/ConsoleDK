@@ -13,7 +13,8 @@ import {
 import { LongRunningLambda } from '../long-running-lambda/long-running-lambda';
 import * as path from "path";
 import { ColumnVariable, Parameters, S3PrefixVariable } from './code/arguments';
-import { validate } from './code/mapping-parser';
+import { getPathPrefixGlobsForTable, validate } from './code/mapping-parser';
+import { IAM_CUSTOMER_ID } from '../simpleauth/constants';
 
 interface IngestionTarget {
     table: MultiTenantDataTable;
@@ -25,10 +26,17 @@ interface S3IngestionMapping {
     columnVariables: ColumnVariable[];
 }
 
+export interface UploaderPolicyProps {
+    name: string;
+    tables: string[];
+    customerId: string;
+}
+
 export interface S3IngestorProps {
     mappings: S3IngestionMapping[];
     ingestionTimeout: cdk.Duration;
     target: IngestionTarget;
+    bucket?: s3.Bucket;
 }
 
 /**
@@ -39,14 +47,17 @@ export interface S3IngestorProps {
 export class S3Ingestor extends cdk.Construct {
     public readonly deadLetterQueue: sqs.Queue;
 
-    private readonly bucket: s3.Bucket;
+    readonly bucket: s3.Bucket;
     private readonly queue: sqs.Queue;
     private readonly lambda: LongRunningLambda;
+
+    private readonly props: S3IngestorProps;
 
     constructor(scope: cdk.Construct, id: string, props: S3IngestorProps) {
         super(scope, id);
 
-        this.bucket = new s3.Bucket(this, 'bucket');
+        this.props = props;
+        this.bucket = props.bucket ?? new s3.Bucket(this, 'bucket');
         this.deadLetterQueue = new sqs.Queue(this, 'dlq');
 
         const KICKOFF_RETRIES = 1;
@@ -72,7 +83,6 @@ export class S3Ingestor extends cdk.Construct {
             environment: {
                 [Parameters.MAPPINGS]: JSON.stringify(props.mappings),
                 [Parameters.DDB_TABLE]: props.target.table.tableName,
-                [Parameters.DDB_PARTITION_TABLE]: props.target.table.partitionTableName,
             },
             tracing: lambda.Tracing.PASS_THROUGH,
             logRetention: logs.RetentionDays.THREE_MONTHS,
@@ -119,6 +129,23 @@ export class S3Ingestor extends cdk.Construct {
         this.lambda.addEventSource(new eventsources.SqsEventSource(this.queue, {
             batchSize: 1,
         }));
+    }
+
+    uploaderPolicy(props: UploaderPolicyProps) {
+        return new iam.Policy(this, `${this.node.id}-uploader-${props.name}`, {
+            document: new iam.PolicyDocument({
+                statements: [
+                    new iam.PolicyStatement({
+                        actions: [
+                            "s3:PutObject",
+                        ],
+                        resources: props.tables.map(tableName => 
+                            `${this.bucket.bucketArn}/\${${IAM_CUSTOMER_ID}}/${getPathPrefixGlobsForTable(tableName, this.props.mappings)}`
+                        ),
+                    }),
+                ],
+            }),
+        });
     }
 
 }

@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
-    "jsx": "react",
-    "target": "ES2018",
+    "jsx": "react-jsx",
+    "target": "ES2019",
     "module": "commonjs",
     "lib": [
       "es2020"
@@ -9,9 +9,10 @@
     "declaration": true,
     "strict": true,
     "noImplicitAny": true,
+    "alwaysStrict": true,
+    "noImplicitUseStrict": false,
     "strictNullChecks": true,
     "noImplicitThis": true,
-    "alwaysStrict": true,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noImplicitReturns": true,
@@ -21,6 +22,7 @@
     "experimentalDecorators": true,
     "strictPropertyInitialization": false,
     "allowJs": true,
+    "esModuleInterop": true,
     "typeRoots": [
       "./node_modules/@types"
     ],
@@ -30,5 +32,11 @@
     "build",
     "node_modules",
     "cdk.out"
+  ],
+  "include": [
+    "./src/**/*.ts",
+    "./src/**/*.tsx",
+    "./src/**/*.js",
+    "./src/**/*.jsx"
   ]
 }
