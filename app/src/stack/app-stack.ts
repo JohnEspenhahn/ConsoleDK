@@ -3,6 +3,7 @@ import { Api } from '../lib/api/api';
 import { ConsoleDKAppStack } from '../lib/consoledk-appstack/consoledk-appstack';
 import { MultiTenantDataTable } from '../lib/multi-tenant-data-table/multi-tenant-data-table';
 import { S3Ingestor } from '../lib/s3-ingestor/s3-ingestor';
+import { SimpleAuth } from '../lib/simpleauth/simple-auth';
 
 export class AppStack extends ConsoleDKAppStack {
 
@@ -10,7 +11,8 @@ export class AppStack extends ConsoleDKAppStack {
     super(scope, id);
 
     const invoicesTable = new MultiTenantDataTable(this, 'table', {
-      name: "Invoice",
+      name: "Invoices",
+      partitionKey: "Carrier"
     });
 
     const consoleBucketName = 'consoledk-console-bucket';
@@ -25,10 +27,10 @@ export class AppStack extends ConsoleDKAppStack {
       ingestionTimeout: cdk.Duration.hours(2),
       mappings: [
         {
-          prefix: "{Partition}/",
+          prefix: "{Carrier}/",
           prefixVariables: [
             {
-              name: "Partition",
+              name: "Carrier",
               type: "PARTITION_KEY",
             },
           ],
@@ -41,12 +43,8 @@ export class AppStack extends ConsoleDKAppStack {
     });
 
     const api = new Api(this, 'api', {
-      lambdaRoutes: [
-        {
-          method: 'GET',
-          path: `query/${invoicesTable.tableName}`,
-          handler: invoicesTable.queryHandler,
-        },
+      dataTables: [
+        invoicesTable
       ],
       s3Routes: [
         {
@@ -57,12 +55,22 @@ export class AppStack extends ConsoleDKAppStack {
       ]
     });
 
+    new SimpleAuth(this, 'auth', {
+      api,
+      customers: [
+        {
+          id: 'ups0001',
+          name: 'UPS',
+          signup: { },
+        },
+      ],
+    });
+
     this.addConsoleAssets({
       entry: "console",
       bucketName: consoleBucketName,
-      metadata: {
-        endpoint: api.endpoint,
-      },
+      serviceEndpoint: "https://k8j7jvwxg0.execute-api.us-west-1.amazonaws.com/prod",
+      metadata: { },
     });
   }
   

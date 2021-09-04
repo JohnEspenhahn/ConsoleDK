@@ -1,6 +1,7 @@
 export const Parameters = {
     MAPPINGS: "MAPPINGS",
     DDB_TABLE: "DDB_TABLE",
+    PARTITION_KEY: "PARTITION_KEY",
 };
 
 

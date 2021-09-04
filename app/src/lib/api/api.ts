@@ -11,6 +11,7 @@ import {
     aws_iam as iam,
     aws_apigateway as apigateway
 } from "monocdk";
+import { MultiTenantDataTable } from "../multi-tenant-data-table/multi-tenant-data-table";
 
 export interface LambdaRoute {
     method: "GET" | "POST" | "PUT" | "DELETE";
@@ -28,6 +29,7 @@ export interface S3GetRoute {
 type S3Route = S3GetRoute;
 
 export interface ApiProps {
+    dataTables?: MultiTenantDataTable[];
     lambdaRoutes?: LambdaRoute[];
     s3Routes?: S3Route[];
 }
@@ -50,7 +52,15 @@ export class Api extends cdk.Construct {
     constructor(scope: cdk.Construct, id: string, props: ApiProps) {
         super(scope, id);
 
-        this.restApi = new apigateway.RestApi(scope, 'Api');
+        this.restApi = new apigateway.RestApi(scope, 'Api', {
+            deployOptions: {
+                loggingLevel: apigateway.MethodLoggingLevel.INFO,
+                dataTraceEnabled: true,
+                tracingEnabled: true,
+                throttlingRateLimit: 100,
+                throttlingBurstLimit: 100, 
+            },
+        });
         this.credentialsRole = new iam.Role(this, "ExecutionRole", {
             assumedBy: new iam.ServicePrincipal("apigateway.amazonaws.com"),
             path: "/service-role/",
@@ -69,14 +79,38 @@ export class Api extends cdk.Construct {
                 }
             }
         }
+
+        if (props.dataTables) {
+            for (const table of props.dataTables) {
+                this.addDataTableRoute(table);
+            }
+        }
     }
 
     get endpoint() {
         return this.restApi.url
     }
 
+    addDataTableRoute(dataTable: MultiTenantDataTable) {
+        return this.addLambdaRoute({
+            method: 'GET',
+            path: `apiv1/queryDataTable/${dataTable.tableName}`,
+            handler: dataTable.queryHandler,
+        })
+    }
+
     addLambdaRoute(route: LambdaRoute) {
-        this.getResource(route.path).addMethod(route.method, new apigateway.LambdaIntegration(route.handler));
+        if (!route.path.startsWith("api")) {
+            throw new Error("Lambda routes must start with api today");
+        }
+
+        this.getResource(route.path).addMethod(route.method, new apigateway.LambdaIntegration(route.handler), {
+            methodResponses: [
+                {
+                    statusCode: "200",
+                },
+            ],
+        });
     }
 
     addGetS3Route(route: S3GetRoute) {
@@ -85,7 +119,7 @@ export class Api extends cdk.Construct {
                 statements: [
                     new iam.PolicyStatement({
                         resources: [
-                            `arn:aws:s3:::${route.bucketName}/${route.key}`
+                            `arn:aws:s3:::${route.bucketName}/*`
                         ],
                         actions: ['s3:GetObject'],
                     }),
@@ -93,14 +127,71 @@ export class Api extends cdk.Construct {
             }),
         }));
 
+        if (route.key.indexOf('/') >= 0) {
+            throw new Error("Route key containing / not yet supported");
+        }
+
         this.getResource(route.path).addMethod("GET", new apigateway.AwsIntegration({
             service: "s3",
             integrationHttpMethod: "GET",
             path: `${route.bucketName}/${route.key}`,
             options: {
-                credentialsRole: this.credentialsRole,
+                credentialsRole: this.credentialsRole, // TODO switch to passthrough
+                integrationResponses: [
+                    {
+                        statusCode: "200",
+                        selectionPattern: "200",
+                        responseParameters: {
+                            "method.response.header.Content-Type": "integration.response.header.Content-Type",
+                        }
+                    },
+                ],
+                passthroughBehavior: apigateway.PassthroughBehavior.WHEN_NO_TEMPLATES,
             },
-        }));
+        }), {
+            methodResponses: [
+                {
+                    statusCode: "200",
+                    responseParameters: {
+                        "method.response.header.Content-Type": true,
+                    },
+                },
+            ],
+        });
+
+        this.getResource((route.path ?? "") + "/{item}").addMethod("GET", new apigateway.AwsIntegration({
+            service: "s3",
+            integrationHttpMethod: "GET",
+            path: `${route.bucketName}/{item}`,
+            options: {
+                credentialsRole: this.credentialsRole, // TODO switch to passthrough
+                requestParameters: {
+                    "integration.request.path.item": "method.request.path.item",
+                },
+                integrationResponses: [
+                    {
+                        statusCode: "200",
+                        selectionPattern: "200",
+                        responseParameters: {
+                            "method.response.header.Content-Type": "integration.response.header.Content-Type",
+                        }
+                    },
+                ],
+                passthroughBehavior: apigateway.PassthroughBehavior.WHEN_NO_TEMPLATES,
+            },
+        }), {
+            requestParameters: {
+                "method.request.path.item": true,
+            },
+            methodResponses: [
+                {
+                    statusCode: "200",
+                    responseParameters: {
+                        "method.response.header.Content-Type": true,
+                    },
+                },
+            ],
+        });
     }
 
     private getResource(path?: string): apigateway.IResource {

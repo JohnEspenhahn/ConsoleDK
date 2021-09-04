@@ -6,15 +6,17 @@ import { v4 as uuidv4 } from 'uuid';
 export class DataTableWriter {
     private readonly ddb: AWS.DynamoDB;
     private readonly ddbTable: string;
+    private readonly ddbPartitionKey: string;
 
     private readonly keyMapping: Mapping;
     private readonly columnTypeLookup: TypeToVariableLookup;
 
     private readonly failureHandler: (items: any[]) => Promise<void>;
 
-    constructor(ddbTable: string, keyMapping: Mapping, failureHandler: (items: any[]) => Promise<void>) {
+    constructor(ddbTable: string, ddbPartitionKey: string, keyMapping: Mapping, failureHandler: (items: any[]) => Promise<void>) {
         this.ddb = AWSXRay.captureAWSClient(new AWS.DynamoDB());
         this.ddbTable = ddbTable;
+        this.ddbPartitionKey = ddbPartitionKey;
         this.keyMapping = keyMapping;
 
         this.columnTypeLookup = createTypeToVariableLookup(keyMapping.columnVariables);
@@ -45,7 +47,7 @@ export class DataTableWriter {
                     Item: AWS.DynamoDB.Converter.marshall({
                         ...row,
                         ...this.keyMapping.columns,
-                        PartitionKey: `${this.keyMapping.customerId}_${partition}`,
+                        [this.ddbPartitionKey]: `${this.keyMapping.customerId}_${partition}`,
                         SortKey: this.keyMapping.sortKey || columnMapping.sortKey || uuidv4() // TODO remove uuidv4()
                     }),
                 },

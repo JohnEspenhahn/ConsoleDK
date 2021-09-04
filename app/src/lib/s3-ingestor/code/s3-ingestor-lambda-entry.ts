@@ -56,6 +56,8 @@ export const main: Handler<Event, Result<Event>> = metricScope(metrics => async 
         throw new Error("No mappings provided in envionrment");
     } else if (!process.env[Parameters.DDB_TABLE]) {
         throw new Error("No ddb table provided in environment");
+    } else if (!process.env[Parameters.PARTITION_KEY]) {
+        throw new Error("No partition key provided in environment");
     }
 
     const mappings: S3IngestionMapping[] = JSON.parse("" + process.env[Parameters.MAPPINGS]);
@@ -132,7 +134,7 @@ async function ingestObject(metrics: MetricsLogger, s3: AWS.S3, bucket: string, 
     const stream = new S3StreamReader();
     const ingestionFailureHandler = ingestionFailureHandlerFactory(s3, bucket, key);
 
-    const writer = new DataTableWriter(getDDBTable(), mapping, ingestionFailureHandler);
+    const writer = new DataTableWriter(getDDBTable(), getPartitionKey(), mapping, ingestionFailureHandler);
 
     try {
         const resp = await stream.stream(bucket, key, startAfter, async (successBatch, failedBatch) => {
@@ -174,3 +176,8 @@ async function deleteObject(s3: AWS.S3, bucket: string, key: string) {
 function getDDBTable() {
     return  "" + process.env[Parameters.DDB_TABLE];
 }
+
+function getPartitionKey() {
+    return  "" + process.env[Parameters.PARTITION_KEY];
+}
+

@@ -79,6 +79,7 @@ export class S3Ingestor extends cdk.Construct {
             environment: {
                 [Parameters.MAPPINGS]: JSON.stringify(props.mappings),
                 [Parameters.DDB_TABLE]: props.target.table.tableName,
+                [Parameters.PARTITION_KEY]: props.target.table.partitionKey,
             },
             tracing: lambda.Tracing.PASS_THROUGH,
             logRetention: logs.RetentionDays.THREE_MONTHS,

@@ -338,7 +338,7 @@ class CsvParser extends Transform {
   _final = async (cb) => {
     console.log("Finally...");
 
-    this._flush(() => 0);
+    await this._flush(() => 0);
     await this.callback({}, undefined, true);
 
     cb()

@@ -3,7 +3,8 @@
     "version": "0.1.0",
     "dependencies": {
         "aws-xray-sdk": "^3.3.3",
-        "aws-embedded-metrics": "^2.0.4"
+        "aws-embedded-metrics": "^2.0.4",
+        "node-sql-parser": "^3.6.5"
     },
     "devDependencies": {}
 }

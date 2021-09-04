@@ -5,7 +5,9 @@ import { Handler, Context } from 'aws-lambda';
 import { Parameters } from './arguments';
 
 interface Event {
-    NextToken?: AWS.DynamoDB.PartiQLNextToken;
+    Next?: {
+        Token: string;
+    }
 }
 
 /**
@@ -27,29 +29,52 @@ export const main: Handler<Event> = metricScope(metrics => async function(event:
 
     if (!process.env[Parameters.DDB_TABLE]) {
         throw new Error("No table provided in envionrment");
+    } else if (!process.env[Parameters.PARTITION_KEY]) {
+        throw new Error("No partition key provided in envionrment");
     }
 
-    const table_name = process.env[Parameters.DDB_TABLE];
+    const table_name = "" + process.env[Parameters.DDB_TABLE];
+    const partition_key = "" + process.env[Parameters.PARTITION_KEY];
     
     const ddb = AWSXRay.captureAWSClient(new AWS.DynamoDB());
     const query: AWS.DynamoDB.ExecuteStatementInput = {
-        Statement: `SELECT * FROM ${table_name}`,
+        Statement: `SELECT * FROM ${table_name} WHERE ${partition_key} = ?`,
+        Parameters: [
+            { "S": `${customer_id}_UPS` }
+        ],
     };
 
-    if (event.NextToken) {
-        query.NextToken = event.NextToken;
+    if (event.Next) {
+        query.NextToken = event.Next.Token;
     }
 
     const results = await ddb.executeStatement(query).promise();
 
-    // Record metrics
+    let items: any = [];
     if (results.Items) {
         emitQueryMetric(metrics, results.Items.length);
+
+        items = results.Items
+            .map(item => AWS.DynamoDB.Converter.unmarshall(item))
+            .map(item => {
+                try {
+                    // Partition key will be like {customerid}_{value}
+                    item[partition_key] = item[partition_key].split("_", 2)[1]
+                    return item;
+                } catch {
+                    return null;
+                }
+            });
     }
 
     return {
-        Items: results.Items?.map(item => AWS.DynamoDB.Converter.unmarshall(item)),
-        NextToken: results.NextToken,
+        statusCode: 200,
+        body: JSON.stringify({
+            Items: items,
+            Next: {
+                Token: results.NextToken,
+            },
+        }),
     };
 });
 
@@ -59,5 +84,5 @@ function emitQueryMetric(metrics: MetricsLogger, rows: number) {
 
 function getIamCustomerId(lambdaContext: Context) {
     // TODO require cognito
-    return lambdaContext.identity?.cognitoIdentityPoolId || 'unauthorized';
+    return lambdaContext.identity?.cognitoIdentityPoolId || 'customerid' || 'unauthorized';
 }

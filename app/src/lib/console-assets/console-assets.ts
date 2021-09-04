@@ -11,6 +11,7 @@ import { Api } from '../api/api';
 export interface ConsoleAssetsProperties {
     entry: string;
     bucketName: string;
+    serviceEndpoint: string;
     metadata: { [key: string]: string };
 }
 
@@ -34,8 +35,6 @@ export class ConsoleAssets extends cdk.Construct {
         this.targetFolder = path.resolve(this.buildFolder, 'console');
 
         this.bucket = new s3.Bucket(this, 'ConsoleAssetsBucket', {
-            publicReadAccess: true,   
-            websiteIndexDocument: "index.html",
             bucketName: props.bucketName,
         });
     }
@@ -50,7 +49,7 @@ export class ConsoleAssets extends cdk.Construct {
                 {
                     entry: path.resolve(this.buildFolder, this.props.entry),
                     output: {
-                        filename: 'app-[hash].bundle.js',
+                        filename: 'app-[fullhash].bundle.js',
                         path: this.targetFolder,
                     },
                     devtool: 'source-map',
@@ -92,8 +91,9 @@ export class ConsoleAssets extends cdk.Construct {
                             meta: {
                                 ...this.props.metadata,
                                 viewport: 'width=device-width,minimum-scale=1,initial-scale=1',
+                                serviceEndpoint: this.props.serviceEndpoint,
                             },
-                            publicPath: `${this.bucket.bucketWebsiteUrl}`,
+                            publicPath: this.props.serviceEndpoint,
                         }),
                     ],
                     resolve: {

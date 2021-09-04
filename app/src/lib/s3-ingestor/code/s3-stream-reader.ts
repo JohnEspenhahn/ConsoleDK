@@ -70,7 +70,7 @@ export class S3StreamReader {
             let failedBatch: FailedRow[] = [];
             let nextStartAfterIndex: number | null = null;
 
-            const batchSize = 1; // TODO increase to 5?
+            const batchSize = 5; // TODO increase to 5?
             const start = Date.now();
             const maxDurationSeconds = 60 * 8;
 
@@ -104,9 +104,6 @@ export class S3StreamReader {
                         if (stop || successBatch.length >= batchSize) {
                             await callback(successBatch, undefined);
                             successBatch = [];
-
-                            // TODO remove
-                            stop = true;
                         }
                     } else if (err.hasOwnProperty("start") && err.hasOwnProperty("end")) {
                         failedBatch.push({

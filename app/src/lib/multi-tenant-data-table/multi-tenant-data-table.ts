@@ -12,6 +12,7 @@ import { Parameters } from './code/arguments';
 
 export interface MultiTenantDataTableProps {
     name: string;
+    partitionKey: string;
 }
 
 /**
@@ -32,11 +33,13 @@ export class MultiTenantDataTable extends cdk.Construct {
 
         if (props.name.indexOf("_") >= 0 || props.name.indexOf("/") >= 0) {
             throw new Error("Table name cannot include _ or /");
+        } else if (props.partitionKey.indexOf("_") >= 0 || props.partitionKey.indexOf("/") >= 0) {
+            throw new Error("Partition key cannot include _ or /");
         }
 
         this.table = new ddb.Table(this, 'Table', {
             partitionKey: {
-                name: 'PartitionKey', type: ddb.AttributeType.STRING,
+                name: props.partitionKey, type: ddb.AttributeType.STRING,
             },
             sortKey: {
                 name: 'SortKey', type: ddb.AttributeType.STRING,
@@ -60,6 +63,7 @@ export class MultiTenantDataTable extends cdk.Construct {
             depsLockFilePath: path.join(__dirname, '/code/package-lock.json'),
             environment: {
                 [Parameters.DDB_TABLE]: this.table.tableName,
+                [Parameters.PARTITION_KEY]: this.props.partitionKey,
             },
             tracing: lambda.Tracing.PASS_THROUGH,
             logRetention: logs.RetentionDays.THREE_MONTHS,
@@ -68,7 +72,7 @@ export class MultiTenantDataTable extends cdk.Construct {
             statements: [
                 new iam.PolicyStatement({
                     actions: [
-                        "dynamodb:ExecuteStatement",
+                        "dynamodb:PartiQLSelect"
                     ],
                     resources: this.arns,
                 })
@@ -87,6 +91,10 @@ export class MultiTenantDataTable extends cdk.Construct {
 
     get tableName() {
         return this.props.name;
+    }
+
+    get partitionKey() {
+        return this.props.partitionKey;
     }
 
     get tableArn() {

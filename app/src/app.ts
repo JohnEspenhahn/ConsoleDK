@@ -14,4 +14,8 @@ async function createApp() {
   return app;
 }
 
-createApp();
+try {
+  createApp();
+} catch (e) {
+  process.exitCode = 1;
+}
