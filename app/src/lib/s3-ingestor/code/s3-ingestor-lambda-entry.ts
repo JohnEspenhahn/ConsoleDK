@@ -65,7 +65,14 @@ export const main: Handler<Event, Result<Event>> = metricScope(metrics => async 
     const sqsMsg: SQSMessage = event.Records[0];
     const sqsMsgBody = JSON.parse(sqsMsg.body);
     if (!sqsMsgBody['Records']) {
-        throw new Error("s3 ingestor lambda can only handle SQSEvents that contain S3Events");
+        // s3 test event may trigger this
+        console.log("s3 ingestor lambda can only handle SQSEvents that contain S3Events");
+        return {
+            cdkResult: {
+                Records: [],
+                Next: null,
+            },
+        };
     } else if (sqsMsgBody.Records.length !== 1) {
         throw new Error("s3 ingestor lambda can only handle one S3Event at a time");
     }
@@ -85,8 +92,8 @@ export const main: Handler<Event, Result<Event>> = metricScope(metrics => async 
             const s3 = AWSXRay.captureAWSClient(new AWS.S3());
             next = await ingestObject(metrics, s3, bucket, key, event['Next'], mapping);
 
-            if (!next) {
-                console.log("Deleting...");
+            if (!_.isNumber(next)) {
+                console.log("Done, deleting...");
                 await deleteObject(s3, bucket, key);
             }
         } else {
@@ -121,16 +128,14 @@ function ingestionFailureHandlerFactory(s3: AWS.S3, sourceBucket: string, source
     }
 }
 
-async function ingestObject(metrics: MetricsLogger, s3: AWS.S3, bucket: string, key: string, next: number | undefined | null, mapping: Mapping): Promise<number | null> {
-    const startIndex: number = next || 0;
-    
+async function ingestObject(metrics: MetricsLogger, s3: AWS.S3, bucket: string, key: string, startAfter: number | undefined | null, mapping: Mapping): Promise<number | null> {
     const stream = new S3StreamReader();
     const ingestionFailureHandler = ingestionFailureHandlerFactory(s3, bucket, key);
 
     const writer = new DataTableWriter(getDDBTable(), mapping, ingestionFailureHandler);
 
     try {
-        const resp = await stream.stream(bucket, key, startIndex, async (successBatch, failedBatch) => {
+        const resp = await stream.stream(bucket, key, startAfter, async (successBatch, failedBatch) => {
             emitIngestionMetric(metrics,  (successBatch?.length || 0) + (failedBatch?.length || 0));
 
             if (successBatch) {

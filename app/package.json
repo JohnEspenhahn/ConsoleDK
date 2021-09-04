@@ -9,7 +9,7 @@
     "watch": "tsc-watch --onSuccess \"npm run synth\"",
     "test": "jest",
     "cdk": "cdk",
-    "deploy": "npm run build && cdk deploy --require-approval never",
+    "deploy": "npm run build && cdk synth --quiet && cdk deploy --require-approval never",
     "recursive-install": "npm-recursive-install",
     "synth": "npm run build && cdk synth --quiet",
     "python-server": "python -m http.server --directory build/console/",

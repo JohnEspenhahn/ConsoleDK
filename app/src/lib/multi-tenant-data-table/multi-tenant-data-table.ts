@@ -10,6 +10,10 @@ import {
 import * as path from "path";
 import { Parameters } from './code/arguments';
 
+export interface MultiTenantDataTableProps {
+    name: string;
+}
+
 /**
  * Table with keys 
  *   PartitionKey="{CUSTOMER_ID}_{DATA_TABLE_PARTITION_KEY}"
@@ -20,8 +24,15 @@ export class MultiTenantDataTable extends cdk.Construct {
     private readonly queryResults: s3.Bucket;
     private readonly alias: lambda.Alias;
 
-    constructor(scope: cdk.Construct, id: string) {
+    private readonly props: MultiTenantDataTableProps;
+
+    constructor(scope: cdk.Construct, id: string, props: MultiTenantDataTableProps) {
         super(scope, id);
+        this.props = props;
+
+        if (props.name.indexOf("_") >= 0 || props.name.indexOf("/") >= 0) {
+            throw new Error("Table name cannot include _ or /");
+        }
 
         this.table = new ddb.Table(this, 'Table', {
             partitionKey: {
@@ -31,6 +42,7 @@ export class MultiTenantDataTable extends cdk.Construct {
                 name: 'SortKey', type: ddb.AttributeType.STRING,
             },
             billingMode: ddb.BillingMode.PAY_PER_REQUEST,
+            tableName: props.name,
         });
 
         this.queryResults = new s3.Bucket(this, 'QueryResults');
@@ -41,7 +53,7 @@ export class MultiTenantDataTable extends cdk.Construct {
         // Query endpoint
         const queryHandler = new lambdajs.NodejsFunction(this, 'Query', {
             memorySize: 256,
-            timeout: cdk.Duration.minutes(30),
+            timeout: cdk.Duration.seconds(30),
             handler: 'main',
             entry: path.join(__dirname, '/code/query-lambda-entry.ts'),
             projectRoot: path.join(__dirname, '/code/'),
@@ -74,7 +86,7 @@ export class MultiTenantDataTable extends cdk.Construct {
     }
 
     get tableName() {
-        return this.table.tableName;
+        return this.props.name;
     }
 
     get tableArn() {

@@ -1,4 +1,3 @@
-import { Duration } from "@aws-cdk/core";
 import * as cdk from "monocdk";
 import { 
     aws_s3 as s3, 
@@ -12,8 +11,6 @@ import {
     aws_iam as iam,
     aws_apigateway as apigateway
 } from "monocdk";
-import { TaskInput } from "monocdk/lib/aws-stepfunctions";
-import * as path from "path";
 
 export interface LambdaRoute {
     method: "GET" | "POST" | "PUT" | "DELETE";
@@ -21,13 +18,26 @@ export interface LambdaRoute {
     handler: lambda.IFunction;
 }
 
+export interface S3GetRoute {
+    method: "GET";
+    path?: string;
+    bucketName: string;
+    key: string;
+}
+
+type S3Route = S3GetRoute;
+
 export interface ApiProps {
-    lambdaRoutes: LambdaRoute[];
+    lambdaRoutes?: LambdaRoute[];
+    s3Routes?: S3Route[];
 }
 
 const ResourceOptions: apigateway.ResourceOptions = {
     defaultCorsPreflightOptions: {
         allowOrigins: ["*"],
+    },
+    defaultMethodOptions: {
+        authorizationType: apigateway.AuthorizationType.NONE,
     },
 };
 
@@ -35,22 +45,69 @@ const ResourceOptions: apigateway.ResourceOptions = {
 export class Api extends cdk.Construct {
     private restApi: apigateway.RestApi;
     private resources: { [resource: string]: apigateway.Resource } = {};
+    private credentialsRole: iam.Role;
 
     constructor(scope: cdk.Construct, id: string, props: ApiProps) {
         super(scope, id);
 
         this.restApi = new apigateway.RestApi(scope, 'Api');
+        this.credentialsRole = new iam.Role(this, "ExecutionRole", {
+            assumedBy: new iam.ServicePrincipal("apigateway.amazonaws.com"),
+            path: "/service-role/",
+        });
 
-        for (const route of props.lambdaRoutes) {
-            this.addRoute(route);
+        if (props.lambdaRoutes) {
+            for (const route of props.lambdaRoutes) {
+                this.addLambdaRoute(route);
+            }
+        }
+
+        if (props.s3Routes) {
+            for (const route of props.s3Routes) {
+                if (route.method === "GET") {
+                    this.addGetS3Route(route);
+                }
+            }
         }
     }
 
-    addRoute(route: LambdaRoute) {
+    get endpoint() {
+        return this.restApi.url
+    }
+
+    addLambdaRoute(route: LambdaRoute) {
         this.getResource(route.path).addMethod(route.method, new apigateway.LambdaIntegration(route.handler));
     }
 
-    private getResource(path: string): apigateway.Resource {
+    addGetS3Route(route: S3GetRoute) {
+        this.credentialsRole.attachInlinePolicy(new iam.Policy(this, `${route.bucketName}-${route.key}-get`, {
+            document: new iam.PolicyDocument({
+                statements: [
+                    new iam.PolicyStatement({
+                        resources: [
+                            `arn:aws:s3:::${route.bucketName}/${route.key}`
+                        ],
+                        actions: ['s3:GetObject'],
+                    }),
+                ],
+            }),
+        }));
+
+        this.getResource(route.path).addMethod("GET", new apigateway.AwsIntegration({
+            service: "s3",
+            integrationHttpMethod: "GET",
+            path: `${route.bucketName}/${route.key}`,
+            options: {
+                credentialsRole: this.credentialsRole,
+            },
+        }));
+    }
+
+    private getResource(path?: string): apigateway.IResource {
+        if (!path) {
+            return this.restApi.root;
+        }
+
         if (this.resources[path]) {
             return this.resources[path];
         }

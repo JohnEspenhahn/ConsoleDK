@@ -59,7 +59,7 @@ class CsvParser extends Transform {
       rowLength: 0,
       quoted: false,
       maximumSizeExceeded: false,
-      skipping: options.startAfter && options.startAfter > 0,
+      skipping: options.startAfter !== null && options.startAfter !== undefined,
     }
 
     this._prev = null
@@ -189,7 +189,7 @@ class CsvParser extends Transform {
   incrementLineNumber() {
     this.state.lineNumber++
 
-    if (this.state.skipping && this.state.lineNumber >= this.options.startAfter) {
+    if (this.state.skipping && this.state.lineNumber > this.options.startAfter) {
       this.state.skipping = false;
     }
   }
@@ -221,6 +221,7 @@ class CsvParser extends Transform {
   }
 
   _flush = async (cb) => {
+    console.log("Flush...")
     if (this.state.escaped || this.state.maximumSizeExceeded || !this._prev) return cb()
     await this.parseLine(this._prev, this.state.previousEnd, this._prev.length + 1) // plus since online -1s
     cb()
@@ -337,6 +338,7 @@ class CsvParser extends Transform {
   _final = async (cb) => {
     console.log("Finally...");
 
+    this._flush(() => 0);
     await this.callback({}, undefined, true);
 
     cb()

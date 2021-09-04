@@ -6,10 +6,12 @@ import {
     aws_s3 as s3, 
     aws_s3_deployment as deployment
 } from "monocdk";
+import { Api } from '../api/api';
 
 export interface ConsoleAssetsProperties {
     entry: string;
     bucketName: string;
+    metadata: { [key: string]: string };
 }
 
 export class ConsoleAssets extends cdk.Construct {
@@ -20,7 +22,7 @@ export class ConsoleAssets extends cdk.Construct {
 
     private props: ConsoleAssetsProperties;
 
-    private bucket: s3.Bucket;
+    public readonly bucket: s3.Bucket;
 
     constructor(scope: cdk.Construct, id: string, props: ConsoleAssetsProperties) {
         super(scope, id);
@@ -36,6 +38,10 @@ export class ConsoleAssets extends cdk.Construct {
             websiteIndexDocument: "index.html",
             bucketName: props.bucketName,
         });
+    }
+
+    get key() {
+        return 'index.html';
     }
 
     async build() {
@@ -84,9 +90,10 @@ export class ConsoleAssets extends cdk.Construct {
                         new HtmlWebpackPlugin({
                             title: 'App',
                             meta: {
+                                ...this.props.metadata,
                                 viewport: 'width=device-width,minimum-scale=1,initial-scale=1',
-                                endpoint: `${this.bucket.bucketWebsiteUrl}`
-                            }
+                            },
+                            publicPath: `${this.bucket.bucketWebsiteUrl}`,
                         }),
                     ],
                     resolve: {

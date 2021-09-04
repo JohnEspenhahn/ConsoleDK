@@ -9,8 +9,19 @@ export class AppStack extends ConsoleDKAppStack {
   constructor(scope: cdk.Construct, id: string) {
     super(scope, id);
 
-    const dataTable = new MultiTenantDataTable(this, 'table');
+    const invoicesTable = new MultiTenantDataTable(this, 'table', {
+      name: "Invoice",
+    });
+
+    const consoleBucketName = 'consoledk-console-bucket';
+    const ingestionBucketName = 'consoledk-ingestion-bucket';
+
+    const ingestionBucket = new cdk.aws_s3.Bucket(this, 'IngestionBucket', {
+      bucketName: ingestionBucketName,
+    });
+
     const s3Ingestor = new S3Ingestor(this, 'ingestor', {
+      bucket: ingestionBucket,
       ingestionTimeout: cdk.Duration.hours(2),
       mappings: [
         {
@@ -25,7 +36,7 @@ export class AppStack extends ConsoleDKAppStack {
         },
       ],
       target: {
-        table: dataTable,
+        table: invoicesTable,
       },
     });
 
@@ -33,15 +44,25 @@ export class AppStack extends ConsoleDKAppStack {
       lambdaRoutes: [
         {
           method: 'GET',
-          path: 'query',
-          handler: dataTable.queryHandler,
+          path: `query/${invoicesTable.tableName}`,
+          handler: invoicesTable.queryHandler,
         },
       ],
+      s3Routes: [
+        {
+          method: 'GET',
+          bucketName: consoleBucketName,
+          key: 'index.html'
+        }
+      ]
     });
 
     this.addConsoleAssets({
       entry: "console",
-      bucketName: `944551238448-console-assets`,
+      bucketName: consoleBucketName,
+      metadata: {
+        endpoint: api.endpoint,
+      },
     });
   }
   

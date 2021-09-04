@@ -35,7 +35,7 @@ export function validateMapping(prefix: string, prefixVariables: S3PrefixVariabl
     assertHasZeroVariablesOfType(columnVariables, "PARTITION_KEY");
 }
 
-function mappingPrefixToRegex(ddbTable: string, prefix: string, prefixVariables: S3PrefixVariable[]) {
+function mappingPrefixToRegex(publicTableName: string, prefix: string, prefixVariables: S3PrefixVariable[]) {
     for (const prefixVar of prefixVariables) {
         if (prefixVar.in) {
             const condition = `(?<${prefixVar.name}>` + prefixVar.in.join("|") + ")"
@@ -45,12 +45,13 @@ function mappingPrefixToRegex(ddbTable: string, prefix: string, prefixVariables:
         }
     }
 
-    return "^(?<customerId>[^/]+)/" + ddbTable + "/" + prefix + "[^/]+$";
+    return "^(?<customerId>[^/]+)/" + publicTableName + "/" + prefix + "[^/]+$";
 }
 
-export function parse(key: string, ddbTable: string, mappings: S3IngestionMapping[]): Mapping | null {
+export function parse(publicTableName: string, key: string, mappings: S3IngestionMapping[]): Mapping | null {
     for (const mapping of mappings) {
-        const regexString = mappingPrefixToRegex(ddbTable, mapping.prefix, mapping.prefixVariables);
+        const regexString = mappingPrefixToRegex(publicTableName, mapping.prefix, mapping.prefixVariables);
+        console.log(regexString);
 
         const regex = new RegExp(regexString);
         const match = regex.exec(key);

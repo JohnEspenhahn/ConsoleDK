@@ -26,12 +26,6 @@ interface S3IngestionMapping {
     columnVariables: ColumnVariable[];
 }
 
-export interface UploaderPolicyProps {
-    name: string;
-    tables: string[];
-    customerId: string;
-}
-
 export interface S3IngestorProps {
     mappings: S3IngestionMapping[];
     ingestionTimeout: cdk.Duration;
@@ -42,6 +36,8 @@ export interface S3IngestorProps {
 /**
  * 
  * Bucket -- notification --> SQS --> LongRunningLambda
+ * 
+ * When file uploaded to path /{IamCustomerId}/{PublicTableName}/{Mapping} inserted into ingestion target
  * 
  */
 export class S3Ingestor extends cdk.Construct {
@@ -129,23 +125,6 @@ export class S3Ingestor extends cdk.Construct {
         this.lambda.addEventSource(new eventsources.SqsEventSource(this.queue, {
             batchSize: 1,
         }));
-    }
-
-    uploaderPolicy(props: UploaderPolicyProps) {
-        return new iam.Policy(this, `${this.node.id}-uploader-${props.name}`, {
-            document: new iam.PolicyDocument({
-                statements: [
-                    new iam.PolicyStatement({
-                        actions: [
-                            "s3:PutObject",
-                        ],
-                        resources: props.tables.map(tableName => 
-                            `${this.bucket.bucketArn}/\${${IAM_CUSTOMER_ID}}/${tableName}/*`
-                        ),
-                    }),
-                ],
-            }),
-        });
     }
 
 }

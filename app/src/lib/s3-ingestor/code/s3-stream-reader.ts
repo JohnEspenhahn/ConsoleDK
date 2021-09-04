@@ -25,7 +25,7 @@ export class S3StreamReader {
         this.s3 = AWSXRay.captureAWSClient(new AWS.S3());
     }
 
-    stream = async (bucket: string, key: string, startIndex: number, callback: StreamReaderCallback): Promise<number | null> => {
+    stream = async (bucket: string, key: string, startIndex: number | null | undefined, callback: StreamReaderCallback): Promise<number | null> => {
         const metadata = await this.s3.headObject({ Bucket: bucket, Key: key }).promise();
 
         // TODO handle JSON
@@ -46,12 +46,13 @@ export class S3StreamReader {
         }
     }
 
-    private processStream(stream: Readable, startAfterIndex: number, callback: StreamReaderCallback): Promise<number | null> {
+    private processStream(stream: Readable, startAfterIndex: number | null | undefined, callback: StreamReaderCallback): Promise<number | null> {
         return new Promise((_resolve, _reject) => {
             let stopFlag = false;
 
             function doStop() {
                 stopFlag = true;
+                // stream.unpipe();
                 stream.destroy();
             }
 
@@ -67,7 +68,7 @@ export class S3StreamReader {
 
             let successBatch: any[] = [];
             let failedBatch: FailedRow[] = [];
-            let nextStartAfterIndex = -1; // Initial
+            let nextStartAfterIndex: number | null = null;
 
             const batchSize = 1; // TODO increase to 5?
             const start = Date.now();
@@ -132,13 +133,7 @@ export class S3StreamReader {
 
                     // Happy-path stop
                     if (stop) {
-                        if (nextStartAfterIndex > startAfterIndex) {
-                            // Potentially more data to process
-                            resolve(nextStartAfterIndex);
-                        } else {
-                            // Done
-                            resolve(null);
-                        }
+                        resolve(nextStartAfterIndex);
                     }
                 }));
         });
