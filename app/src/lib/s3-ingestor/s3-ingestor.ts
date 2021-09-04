@@ -16,10 +16,6 @@ import { ColumnVariable, Parameters, S3PrefixVariable } from './code/arguments';
 import { validate } from './code/mapping-parser';
 import { IAM_CUSTOMER_ID } from '../simpleauth/constants';
 
-interface IngestionTarget {
-    table: MultiTenantDataTable;
-}
-
 interface S3IngestionMapping {
     prefix: string;
     prefixVariables: S3PrefixVariable[];
@@ -28,8 +24,8 @@ interface S3IngestionMapping {
 
 export interface S3IngestorProps {
     mappings: S3IngestionMapping[];
-    ingestionTimeout: cdk.Duration;
-    target: IngestionTarget;
+    ingestionTimeout?: cdk.Duration;
+    target: MultiTenantDataTable;
     bucket?: s3.Bucket;
 }
 
@@ -78,8 +74,8 @@ export class S3Ingestor extends cdk.Construct {
             depsLockFilePath: path.join(__dirname, '/code/package-lock.json'),
             environment: {
                 [Parameters.MAPPINGS]: JSON.stringify(props.mappings),
-                [Parameters.DDB_TABLE]: props.target.table.tableName,
-                [Parameters.PARTITION_KEY]: props.target.table.partitionKey,
+                [Parameters.DDB_TABLE]: props.target.tableName,
+                [Parameters.PARTITION_KEY]: props.target.partitionKey,
             },
             tracing: lambda.Tracing.PASS_THROUGH,
             logRetention: logs.RetentionDays.THREE_MONTHS,
@@ -107,7 +103,7 @@ export class S3Ingestor extends cdk.Construct {
                     actions: [
                         "dynamodb:BatchWriteItem",
                     ],
-                    resources: props.target.table.arns,
+                    resources: props.target.arns,
                 })
             ],
         }));
@@ -119,7 +115,7 @@ export class S3Ingestor extends cdk.Construct {
 
         this.lambda = new LongRunningLambda(this, 'lambda', {
             processor: alias,
-            timeout: props.ingestionTimeout,
+            timeout: props.ingestionTimeout ?? cdk.Duration.hours(2),
             dlq: this.deadLetterQueue,
         });
 

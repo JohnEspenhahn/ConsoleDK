@@ -1,9 +1,11 @@
 import * as cdk from 'monocdk';
-import { Api } from '../lib/api/api';
-import { ConsoleDKAppStack } from '../lib/consoledk-appstack/consoledk-appstack';
-import { MultiTenantDataTable } from '../lib/multi-tenant-data-table/multi-tenant-data-table';
-import { S3Ingestor } from '../lib/s3-ingestor/s3-ingestor';
-import { SimpleAuth } from '../lib/simpleauth/simple-auth';
+import * as datamodel from './datamodel';
+import * as path from 'path';
+import { Api } from './lib/api/api';
+import { ConsoleDKAppStack } from './lib/consoledk-appstack/consoledk-appstack';
+import { MultiTenantDataTable } from './lib/multi-tenant-data-table/multi-tenant-data-table';
+import { S3Ingestor } from './lib/s3-ingestor/s3-ingestor';
+import { SimpleAuth } from './lib/simpleauth/simple-auth';
 
 export class AppStack extends ConsoleDKAppStack {
 
@@ -12,7 +14,7 @@ export class AppStack extends ConsoleDKAppStack {
 
     const invoicesTable = new MultiTenantDataTable(this, 'table', {
       name: "Invoices",
-      partitionKey: "Carrier"
+      model: datamodel.Invoices,
     });
 
     const consoleBucketName = 'consoledk-console-bucket';
@@ -23,8 +25,8 @@ export class AppStack extends ConsoleDKAppStack {
     });
 
     const s3Ingestor = new S3Ingestor(this, 'ingestor', {
-      bucket: ingestionBucket,
-      ingestionTimeout: cdk.Duration.hours(2),
+      target: invoicesTable,
+      bucket: ingestionBucket,      
       mappings: [
         {
           prefix: "{Carrier}/",
@@ -37,9 +39,6 @@ export class AppStack extends ConsoleDKAppStack {
           columnVariables: [],
         },
       ],
-      target: {
-        table: invoicesTable,
-      },
     });
 
     const api = new Api(this, 'api', {
